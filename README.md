@@ -1,70 +1,270 @@
-# Getting Started with Create React App
+# AI Interview Platform 🚀
 
-This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).
+This project is a **Full‑Stack AI‑Powered Interview Platform** built using **FastAPI (Backend)** and **React (Frontend)**, integrated with **OpenAI APIs** for intelligent interview conversations and **Text‑to‑Speech (TTS)** audio responses.
 
-## Available Scripts
+The platform supports **Technical, HR, System Design, and Case Study rounds** for:
 
-In the project directory, you can run:
+* Data Analyst
+* Software Development Engineer (SDE)
 
-### `npm start`
+---
 
-Runs the app in the development mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in your browser.
+## 🏗️ Project Structure
 
-The page will reload when you make changes.\
-You may also see any lint errors in the console.
+```
+AI/
+│
+├── backend/
+│   ├── main.py
+│   ├── requirements.txt
+│   ├── .env
+│   ├── static/
+│   │   └── audio/
+│   └── venv/
+│
+├── frontend/
+│   ├── package.json
+│   ├── package-lock.json
+│   ├── public/
+│   └── src/
+│       ├── App.js
+│       ├── App.css
+│       ├── index.js
+│       └── ...
+│
+└── README.md
+```
 
-### `npm test`
+---
 
-Launches the test runner in the interactive watch mode.\
-See the section about [running tests](https://facebook.github.io/create-react-app/docs/running-tests) for more information.
+## 🧠 Features
 
-### `npm run build`
+* AI‑driven interview questions
+* Multiple interview rounds (Technical, HR, System Design, Case Study)
+* Role‑based flow (Data Analyst / SDE)
+* Step‑by‑step adaptive questioning
+* Short feedback after each answer
+* AI‑generated voice responses (TTS)
+* Conversation history support
 
-Builds the app for production to the `build` folder.\
-It correctly bundles React in production mode and optimizes the build for the best performance.
+---
 
-The build is minified and the filenames include the hashes.\
-Your app is ready to be deployed!
+## ⚙️ Prerequisites
 
-See the section about [deployment](https://facebook.github.io/create-react-app/docs/deployment) for more information.
+Make sure the following are installed:
 
-### `npm run eject`
+* **Python 3.9+**
+* **Node.js 18+**
+* **npm**
+* **OpenAI API Key**
 
-**Note: this is a one-way operation. Once you `eject`, you can't go back!**
+---
 
-If you aren't satisfied with the build tool and configuration choices, you can `eject` at any time. This command will remove the single build dependency from your project.
+## 🔐 OpenAI API Setup
 
-Instead, it will copy all the configuration files and the transitive dependencies (webpack, Babel, ESLint, etc) right into your project so you have full control over them. All of the commands except `eject` will still work, but they will point to the copied scripts so you can tweak them. At this point you're on your own.
+1. Create an OpenAI account
+2. Generate an API key
+3. In `backend/.env`, add:
 
-You don't have to ever use `eject`. The curated feature set is suitable for small and middle deployments, and you shouldn't feel obligated to use this feature. However we understand that this tool wouldn't be useful if you couldn't customize it when you are ready for it.
+```
+OPENAI_API_KEY=your_openai_api_key_here
+```
 
-## Learn More
+---
 
-You can learn more in the [Create React App documentation](https://facebook.github.io/create-react-app/docs/getting-started).
+## 🖥️ Backend Setup (FastAPI)
 
-To learn React, check out the [React documentation](https://reactjs.org/).
+### Step 1: Navigate to Backend
 
-### Code Splitting
+```
+cd backend
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/code-splitting](https://facebook.github.io/create-react-app/docs/code-splitting)
+### Step 2: Create Virtual Environment
 
-### Analyzing the Bundle Size
+```
+python -m venv venv
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size](https://facebook.github.io/create-react-app/docs/analyzing-the-bundle-size)
+Activate it:
 
-### Making a Progressive Web App
+**Windows**
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app](https://facebook.github.io/create-react-app/docs/making-a-progressive-web-app)
+```
+venv\Scripts\activate
+```
 
-### Advanced Configuration
+**Mac/Linux**
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/advanced-configuration](https://facebook.github.io/create-react-app/docs/advanced-configuration)
+```
+source venv/bin/activate
+```
 
-### Deployment
+---
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/deployment](https://facebook.github.io/create-react-app/docs/deployment)
+### Step 3: Install Dependencies
 
-### `npm run build` fails to minify
+```
+pip install -r requirements.txt
+```
 
-This section has moved here: [https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify](https://facebook.github.io/create-react-app/docs/troubleshooting#npm-run-build-fails-to-minify)
+If `requirements.txt` is missing, install manually:
+
+```
+pip install fastapi uvicorn python-dotenv openai pydantic
+```
+
+---
+
+### Step 4: Run Backend Server
+
+```
+uvicorn main:app --reload
+```
+
+Backend will start at:
+
+```
+http://localhost:8000
+```
+
+### Health Check
+
+```
+http://localhost:8000/health
+```
+
+---
+
+## 🌐 Frontend Setup (React)
+
+### Step 1: Navigate to Frontend
+
+```
+cd frontend
+```
+
+---
+
+### Step 2: Install Node Modules
+
+```
+npm install
+```
+
+---
+
+### Step 3: Start Frontend
+
+```
+npm start
+```
+
+Frontend will run at:
+
+```
+http://localhost:3000
+```
+
+---
+
+## 🔄 Frontend ↔ Backend Communication
+
+* Frontend sends POST requests to:
+
+```
+POST http://localhost:8000/chat
+```
+
+### Sample Request Payload
+
+```json
+{
+  "message": "I want Data Analyst technical round",
+  "round_type": "technical",
+  "history": []
+}
+```
+
+### Sample Response
+
+```json
+{
+  "response": "Great! Let's begin...",
+  "audio_url": "/static/audio/audio_xxxxx.mp3"
+}
+```
+
+---
+
+## 🔊 Audio Feature (TTS)
+
+* AI responses are converted to audio
+* Audio files are stored in:
+
+```
+backend/static/audio/
+```
+
+* Audio served via:
+
+```
+http://localhost:8000/static/audio/<filename>.mp3
+```
+
+---
+
+## 🧪 Supported Interview Rounds
+
+| Round Type    | Values          |
+| ------------- | --------------- |
+| Technical     | `technical`     |
+| HR            | `hr`            |
+| System Design | `system-design` |
+| Case Study    | `case-study`    |
+
+---
+
+## 🛠️ Common Errors & Fixes
+
+### ❌ Backend Not Starting
+
+* Check Python version
+* Ensure virtual environment is activated
+* Verify `.env` file exists
+
+### ❌ OpenAI Error
+
+* Check API key
+* Ensure internet connection
+
+### ❌ CORS Error
+
+* Ensure frontend runs on port `3000`
+* Backend CORS already configured
+
+---
+
+## 🚀 Production Deployment (Optional)
+
+* Backend: Render / Railway / AWS EC2
+* Frontend: Vercel / Netlify
+* Use `.env` variables on deployment platform
+
+---
+
+## 📌 Future Improvements
+
+* Authentication (Login / Signup)
+* Interview scoring system
+* Resume‑based questioning
+* Video interview support
+* Admin dashboard
+
+---
+
+## 👨‍💻 Author
+
+Built as an **AI Interview Preparation Platform** for real‑world interview practice.
+
+---
