@@ -10,12 +10,20 @@ import hashlib
 import asyncio
 from datetime import datetime
 import uvicorn
+from motor.motor_asyncio import AsyncIOMotorClient
+import certifi
 
 # Load env variables
 load_dotenv()
 
 # Initialize OpenAI client
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+
+# Initialize MongoDB
+MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
+MONGO_DB_NAME = os.getenv("MONGO_DB", "ai_interview_platform")
+mongo_client = AsyncIOMotorClient(MONGO_URI, tlsCAFile=certifi.where())
+db = mongo_client[MONGO_DB_NAME]
 
 # Initialize FastAPI app
 app = FastAPI(title="AI Interview Platform", version="1.0.0")
@@ -37,11 +45,16 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 class ChatMessage(BaseModel):
     message: str
     round_type: str
-    history: List[Dict[str, Any]] = []
+    session_id: str
+    user_id: str
 
 class ChatResponse(BaseModel):
     response: str
     audio_url: Optional[str] = None
+
+class ClearHistoryRequest(BaseModel):
+    session_id: str
+    round_type: str
 
 # Interview prompts
 INTERVIEW_PROMPTS = {
@@ -283,13 +296,39 @@ async def generate_audio(text: str) -> str:
 async def chat_endpoint(chat_message: ChatMessage):
     """Main chat endpoint for interview interactions"""
     try:
+        # Fetch history from MongoDB
+        session_doc = await db.sessions.find_one({"session_id": chat_message.session_id, "round_type": chat_message.round_type})
+        history = session_doc.get("messages", []) if session_doc else []
+
         ai_response = await generate_response(
             chat_message.message,
             chat_message.round_type,
-            chat_message.history
+            history
         )
 
         audio_url = await generate_audio(ai_response)
+
+        # Update MongoDB
+        user_msg = {"type": "user", "content": chat_message.message, "timestamp": datetime.now().isoformat()}
+        bot_msg = {"type": "bot", "content": ai_response, "audio_url": audio_url, "timestamp": datetime.now().isoformat()}
+        
+        # Create a title based on the first message
+        title = chat_message.message[:30] + "..." if len(chat_message.message) > 30 else chat_message.message
+        
+        await db.sessions.update_one(
+            {"session_id": chat_message.session_id, "round_type": chat_message.round_type},
+            {
+                "$push": {"messages": {"$each": [user_msg, bot_msg]}},
+                "$set": {
+                    "user_id": chat_message.user_id,
+                    "updated_at": datetime.now().isoformat()
+                },
+                "$setOnInsert": {
+                    "title": title
+                }
+            },
+            upsert=True
+        )
 
         return ChatResponse(
             response=ai_response,
@@ -298,6 +337,50 @@ async def chat_endpoint(chat_message: ChatMessage):
 
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/history/{session_id}/{round_type}")
+async def get_history(session_id: str, round_type: str):
+    """Fetch conversation history for a session and round"""
+    try:
+        session_doc = await db.sessions.find_one({"session_id": session_id, "round_type": round_type})
+        if session_doc:
+            # We don't return the _id to avoid serialization issues
+            return {"messages": session_doc.get("messages", [])}
+        return {"messages": []}
+    except Exception as e:
+        print(f"Error fetching history: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.post("/clear-history")
+async def clear_history(req: ClearHistoryRequest):
+    """Clear conversation history for a session and round"""
+    try:
+        await db.sessions.delete_one({"session_id": req.session_id, "round_type": req.round_type})
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Error clearing history: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+@app.get("/sessions/{user_id}")
+async def get_sessions(user_id: str):
+    """Fetch all sessions for a user"""
+    try:
+        cursor = db.sessions.find({"user_id": user_id}).sort("updated_at", -1)
+        sessions = await cursor.to_list(length=100)
+        
+        formatted_sessions = []
+        for s in sessions:
+            formatted_sessions.append({
+                "session_id": s.get("session_id"),
+                "round_type": s.get("round_type"),
+                "title": s.get("title", s.get("round_type", "Interview Session")),
+                "updated_at": s.get("updated_at")
+            })
+            
+        return {"sessions": formatted_sessions}
+    except Exception as e:
+        print(f"Error fetching sessions: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
 @app.get("/health")
