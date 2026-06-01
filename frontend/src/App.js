@@ -97,35 +97,98 @@ const InterviewApp = () => {
 
   // Speech recognition setup
   useEffect(() => {
-    if ('webkitSpeechRecognition' in window) {
-      const recognitionInstance = new window.webkitSpeechRecognition();
+    let recognitionInstance = null;
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+    if (SpeechRecognition) {
+      recognitionInstance = new SpeechRecognition();
       recognitionInstance.continuous = true;
       recognitionInstance.interimResults = true;
       recognitionInstance.lang = 'en-US';
 
       recognitionInstance.onresult = (event) => {
         let finalTranscript = '';
-        for (let i = event.resultIndex; i < event.results.length; i++) {
+        let interimTranscript = '';
+        for (let i = 0; i < event.results.length; i++) {
+          const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalTranscript += event.results[i][0].transcript;
+            finalTranscript += transcript;
+          } else {
+            interimTranscript += transcript;
           }
         }
-        if (finalTranscript) {
-          setCurrentMessage(finalTranscript);
-        }
+        setCurrentMessage(finalTranscript + interimTranscript);
       };
 
+      recognitionInstance.onstart = () => setIsRecording(true);
+      recognitionInstance.onerror = (event) => {
+        console.error('Speech recognition error:', event.error);
+        setIsRecording(false);
+        
+        if (event.error === 'not-allowed') {
+          alert("Microphone access is blocked! Please click the microphone/lock icon in your browser's address bar and select 'Allow' to use voice typing.");
+        } else if (event.error === 'no-speech') {
+          // No speech detected, ignore this warning safely
+        } else if (event.error === 'network') {
+          alert("Speech recognition network error! Please check your internet connection.");
+        } else {
+          alert(`Speech recognition error: ${event.error}. Please try again.`);
+        }
+      };
       recognitionInstance.onend = () => setIsRecording(false);
+      
       setRecognition(recognitionInstance);
     }
+
+    return () => {
+      if (recognitionInstance) {
+        try {
+          recognitionInstance.stop();
+        } catch (e) {
+          // ignore
+        }
+      }
+    };
   }, []);
+
+  // Stop recording when view changes (e.g., navigating back to home or another round)
+  useEffect(() => {
+    if (isRecording && recognition) {
+      try {
+        recognition.stop();
+      } catch (e) {
+        console.error('Error stopping speech recognition on view change:', e);
+      }
+      setIsRecording(false);
+    }
+  }, [currentView, recognition]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  const startRecording = () => recognition && (setIsRecording(true), recognition.start());
-  const stopRecording = () => recognition && (setIsRecording(false), recognition.stop());
+  const startRecording = () => {
+    if (!recognition) {
+      alert("Speech recognition is not supported in this browser. Please use a modern browser like Google Chrome, Microsoft Edge, or Apple Safari.");
+      return;
+    }
+    try {
+      recognition.start();
+      setIsRecording(true);
+    } catch (e) {
+      console.error('Speech recognition start error:', e);
+    }
+  };
+
+  const stopRecording = () => {
+    if (!recognition) return;
+    try {
+      recognition.stop();
+      setIsRecording(false);
+    } catch (e) {
+      console.error('Speech recognition stop error:', e);
+    }
+  };
 
   const sendMessage = async () => {
     if (!currentMessage.trim() || isLoading) return;
@@ -153,7 +216,6 @@ const InterviewApp = () => {
         ...prev,
         [currentView]: [
           ...(prev[currentView] || []),
-          { type: 'user', content: userMessage, timestamp: new Date() },
           { type: 'bot', content: data.response, timestamp: new Date(), audioUrl: data.audio_url }
         ]
       }));
@@ -168,7 +230,6 @@ const InterviewApp = () => {
         ...prev,
         [currentView]: [
           ...(prev[currentView] || []),
-          { type: 'user', content: userMessage, timestamp: new Date() },
           { type: 'bot', content: 'Sorry, I encountered an error. Please try again.', timestamp: new Date() }
         ]
       }));
