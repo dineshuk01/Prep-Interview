@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Send, Volume2, User, Bot, Clock, Briefcase, Code, Users, Settings, Plus } from 'lucide-react';
+import { Mic, MicOff, Send, Volume2, User, Bot, Clock, Briefcase, Code, Users, Settings, Plus, Sun, Moon } from 'lucide-react';
 
 const InterviewCard = ({ type, onClick, cardStyles }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -39,14 +39,14 @@ const InterviewCard = ({ type, onClick, cardStyles }) => {
       <h3 style={{
         fontSize: '1.5rem',
         fontWeight: 'bold',
-        color: '#1f2937',
+        color: 'var(--text-main)',
         marginBottom: '1rem'
       }}>
         {type.title}
       </h3>
 
       <p style={{
-        color: '#6b7280',
+        color: 'var(--text-muted)',
         lineHeight: '1.6',
         marginBottom: '1.5rem'
       }}>
@@ -56,14 +56,15 @@ const InterviewCard = ({ type, onClick, cardStyles }) => {
       {/* Button */}
       <div style={{
         display: 'inline-block',
-        background: 'white',
+        background: isHovered ? cardStyle.button.background : 'white',
         padding: '0.75rem 1.5rem',
         borderRadius: '2rem',
         fontSize: '0.875rem',
-        fontWeight: '500',
-        color: '#374151',
-        boxShadow: '0 2px 4px rgba(0,0,0,0.1)',
-        border: '1px solid #e5e7eb'
+        fontWeight: '600',
+        color: isHovered ? cardStyle.button.color : '#4b5563',
+        boxShadow: isHovered ? 'none' : '0 1px 2px rgba(0,0,0,0.05)',
+        border: `1px solid ${isHovered ? cardStyle.button.borderColor : '#e5e7eb'}`,
+        transition: 'all 0.3s ease'
       }}>
         Start Interview →
       </div>
@@ -73,6 +74,7 @@ const InterviewCard = ({ type, onClick, cardStyles }) => {
 
 const InterviewApp = () => {
   const [currentView, setCurrentView] = useState('home');
+  const [isDarkMode, setIsDarkMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [messages, setMessages] = useState({});
   const [userId] = useState(() => {
@@ -97,6 +99,14 @@ const InterviewApp = () => {
   const [recognition, setRecognition] = useState(null);
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
+  useEffect(() => {
+    if (isDarkMode) {
+      document.documentElement.setAttribute('data-theme', 'dark');
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+    }
+  }, [isDarkMode]);
+
 
   const interviewTypes = [
     { id: 'technical', title: 'Technical Round', description: 'Coding problems, algorithms, and technical concepts', icon: Code, iconColor: 'blue', cardColor: 'blue' },
@@ -106,10 +116,10 @@ const InterviewApp = () => {
   ];
 
   const cardStyles = {
-    blue: { card: { background: 'linear-gradient(135deg, #dbeafe 0%, #f3f4f6 100%)', border: '1px solid #e5e7eb', transition: 'all 0.3s ease' }, cardHover: { background: 'linear-gradient(135deg, #bfdbfe 0%, #e5e7eb 100%)', transform: 'translateY(-4px) scale(1.02)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }, icon: { background: 'linear-gradient(135deg, #3b82f6 0%, #8b5cf6 100%)' } },
-    green: { card: { background: 'linear-gradient(135deg, #d1fae5 0%, #f3f4f6 100%)', border: '1px solid #e5e7eb', transition: 'all 0.3s ease' }, cardHover: { background: 'linear-gradient(135deg, #a7f3d0 0%, #e5e7eb 100%)', transform: 'translateY(-4px) scale(1.02)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }, icon: { background: 'linear-gradient(135deg, #10b981 0%, #14b8a6 100%)' } },
-    orange: { card: { background: 'linear-gradient(135deg, #fed7aa 0%, #f3f4f6 100%)', border: '1px solid #e5e7eb', transition: 'all 0.3s ease' }, cardHover: { background: 'linear-gradient(135deg, #fdba74 0%, #e5e7eb 100%)', transform: 'translateY(-4px) scale(1.02)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }, icon: { background: 'linear-gradient(135deg, #f97316 0%, #ef4444 100%)' } },
-    purple: { card: { background: 'linear-gradient(135deg, #e9d5ff 0%, #f3f4f6 100%)', border: '1px solid #e5e7eb', transition: 'all 0.3s ease' }, cardHover: { background: 'linear-gradient(135deg, #ddd6fe 0%, #e5e7eb 100%)', transform: 'translateY(-4px) scale(1.02)', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1)' }, icon: { background: 'linear-gradient(135deg, #8b5cf6 0%, #ec4899 100%)' } }
+    blue: { card: { background: 'var(--bg-card)', border: '1px solid #f3f4f6', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }, cardHover: { transform: 'translateY(-4px)', boxShadow: '0 20px 25px -5px rgba(59, 130, 246, 0.15), 0 8px 10px -6px rgba(59, 130, 246, 0.1)', borderColor: '#bfdbfe' }, icon: { background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', boxShadow: '0 8px 16px -4px rgba(59, 130, 246, 0.4)' }, button: { color: '#2563eb', background: '#eff6ff', borderColor: '#bfdbfe' } },
+    green: { card: { background: 'var(--bg-card)', border: '1px solid #f3f4f6', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }, cardHover: { transform: 'translateY(-4px)', boxShadow: '0 20px 25px -5px rgba(16, 185, 129, 0.15), 0 8px 10px -6px rgba(16, 185, 129, 0.1)', borderColor: '#a7f3d0' }, icon: { background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)', boxShadow: '0 8px 16px -4px rgba(16, 185, 129, 0.4)' }, button: { color: '#059669', background: '#ecfdf5', borderColor: '#a7f3d0' } },
+    orange: { card: { background: 'var(--bg-card)', border: '1px solid #f3f4f6', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }, cardHover: { transform: 'translateY(-4px)', boxShadow: '0 20px 25px -5px rgba(249, 115, 22, 0.15), 0 8px 10px -6px rgba(249, 115, 22, 0.1)', borderColor: '#fed7aa' }, icon: { background: 'linear-gradient(135deg, #f97316 0%, #ea580c 100%)', boxShadow: '0 8px 16px -4px rgba(249, 115, 22, 0.4)' }, button: { color: '#ea580c', background: '#fff7ed', borderColor: '#fed7aa' } },
+    purple: { card: { background: 'var(--bg-card)', border: '1px solid #f3f4f6', transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05)' }, cardHover: { transform: 'translateY(-4px)', boxShadow: '0 20px 25px -5px rgba(139, 92, 246, 0.15), 0 8px 10px -6px rgba(139, 92, 246, 0.1)', borderColor: '#e9d5ff' }, icon: { background: 'linear-gradient(135deg, #8b5cf6 0%, #7c3aed 100%)', boxShadow: '0 8px 16px -4px rgba(139, 92, 246, 0.4)' }, button: { color: '#7c3aed', background: '#faf5ff', borderColor: '#e9d5ff' } }
   };
 
   // Speech recognition setup
@@ -212,7 +222,10 @@ const InterviewApp = () => {
   }, [currentView, recognition, sessionId, isRecording]);
 
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    if (messagesEndRef.current && messagesEndRef.current.parentElement) {
+      const container = messagesEndRef.current.parentElement;
+      container.scrollTop = container.scrollHeight;
+    }
   }, [messages]);
 
   const startRecording = () => {
@@ -331,15 +344,15 @@ const InterviewApp = () => {
   };
 
   const renderSidebar = () => (
-    <div style={{ width: '260px', background: '#1f2937', color: 'white', display: 'flex', flexDirection: 'column', height: '100vh', padding: '1.5rem 1rem', flexShrink: 0 }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '2rem', padding: '0 0.5rem' }}>
-        <Bot size={24} color="#60a5fa" />
-        <h2 style={{ fontSize: '1.25rem', fontWeight: 'bold', margin: 0 }}>AI Interview</h2>
+    <div style={{ width: '260px', background: 'var(--bg-sidebar)', color: 'white', display: 'flex', flexDirection: 'column', height: '100vh', padding: '1.5rem 1rem', flexShrink: 0, boxSizing: 'border-box' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '1.5rem', padding: '0 0.5rem' }}>
+        <Bot size={20} color="#60a5fa" />
+        <h2 style={{ fontSize: '1.125rem', fontWeight: 'bold', margin: 0 }}>AI Interview</h2>
       </div>
       
       <button 
         onClick={handleNewSession}
-        style={{ width: '100%', background: '#3b82f6', color: 'white', border: 'none', padding: '0.75rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '1.5rem', transition: 'background 0.2s' }}
+        style={{ width: '100%', background: '#3b82f6', color: 'white', border: 'none', padding: '0.5rem 0.75rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500', fontSize: '0.875rem', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', marginBottom: '1rem', transition: 'background 0.2s' }}
         onMouseOver={(e) => e.currentTarget.style.background = '#2563eb'}
         onMouseOut={(e) => e.currentTarget.style.background = '#3b82f6'}
       >
@@ -347,7 +360,7 @@ const InterviewApp = () => {
         New Interview
       </button>
       
-      <div style={{ fontSize: '0.75rem', fontWeight: '600', color: '#9ca3af', marginBottom: '0.75rem', textTransform: 'uppercase', padding: '0 0.5rem' }}>
+      <div style={{ fontSize: '0.65rem', fontWeight: '600', color: 'var(--text-light)', marginBottom: '0.5rem', textTransform: 'uppercase', padding: '0 0.5rem' }}>
         Previous Sessions
       </div>
       
@@ -357,31 +370,43 @@ const InterviewApp = () => {
             key={`${session.session_id}-${session.round_type}`} 
             onClick={() => handleLoadSession(session)}
             style={{ 
-              padding: '0.75rem', 
+              padding: '0.5rem 0.75rem', 
               background: (sessionId === session.session_id && currentView !== 'home') ? '#374151' : 'transparent', 
               borderRadius: '0.5rem', 
               cursor: 'pointer', 
               transition: 'all 0.2s',
               display: 'flex',
               flexDirection: 'column',
-              gap: '0.25rem'
+              gap: '0.15rem'
             }}
-            onMouseOver={(e) => { if (sessionId !== session.session_id || currentView === 'home') e.currentTarget.style.background = '#374151'; }}
+            onMouseOver={(e) => { if (sessionId !== session.session_id || currentView === 'home') e.currentTarget.style.background = 'var(--bg-sidebar-hover)'; }}
             onMouseOut={(e) => { if (sessionId !== session.session_id || currentView === 'home') e.currentTarget.style.background = 'transparent'; }}
           >
-            <div style={{ fontWeight: '500', fontSize: '0.875rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: (sessionId === session.session_id && currentView !== 'home') ? 'white' : '#d1d5db' }}>
+            <div style={{ fontWeight: '500', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: (sessionId === session.session_id && currentView !== 'home') ? 'white' : '#9ca3af' }}>
               {session.title}
             </div>
-            <div style={{ fontSize: '0.75rem', color: '#9ca3af', display: 'flex', justifyContent: 'space-between' }}>
+            <div style={{ fontSize: '0.7rem', color: '#6b7280', display: 'flex', justifyContent: 'space-between' }}>
               <span>{session.round_type.replace('-', ' ')}</span>
             </div>
           </div>
         ))}
         {sessionsList.length === 0 && (
-          <div style={{ fontSize: '0.875rem', color: '#6b7280', padding: '0 0.5rem', marginTop: '0.5rem' }}>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', padding: '0 0.5rem', marginTop: '0.5rem' }}>
             No previous sessions
           </div>
         )}
+      </div>
+
+      <div style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border-light)' }}>
+        <button 
+          onClick={() => setIsDarkMode(!isDarkMode)}
+          style={{ width: '100%', background: 'transparent', color: 'white', border: 'none', padding: '0.5rem 0.75rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.75rem', transition: 'background 0.2s' }}
+          onMouseOver={(e) => e.currentTarget.style.background = 'var(--bg-sidebar-hover)'}
+          onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+        >
+          {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
+          <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
+        </button>
       </div>
     </div>
   );
@@ -389,13 +414,13 @@ const InterviewApp = () => {
   const renderContent = () => {
     if (currentView === 'home') {
       return (
-        <div style={{ flex: 1, minHeight: '100vh', overflowY: 'auto', background: 'linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%)', padding: '2rem 1rem' }}>
+        <div style={{ flex: 1, minHeight: '100vh', overflowY: 'auto', background: 'var(--bg-secondary)', padding: '2rem 1rem' }}>
           <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
             <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
-              <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', color: '#1f2937', marginBottom: '1rem' }}>
+              <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '1rem' }}>
                 AI Interview Platform
               </h1>
-              <p style={{ fontSize: '1.25rem', color: '#6b7280', maxWidth: '600px', margin: '0 auto', lineHeight: '1.6' }}>
+              <p style={{ fontSize: '1.25rem', color: 'var(--text-muted)', maxWidth: '600px', margin: '0 auto', lineHeight: '1.6' }}>
                 Practice your interview skills with AI-powered mock interviews across different rounds
               </p>
             </div>
@@ -410,27 +435,29 @@ const InterviewApp = () => {
     }
 
     // Interview chat view
-    const currentType = interviewTypes.find(type => type.id === currentView);
+    const activeSession = sessionsList.find(s => s.session_id === currentView);
+    const roundType = activeSession ? activeSession.round_type : currentView;
+    const currentType = interviewTypes.find(type => type.id === roundType) || interviewTypes[0];
+    const displayTitle = activeSession ? activeSession.title : currentType.title;
     const currentMessages = messages[currentView] || [];
 
     return (
-      <div style={{ flex: 1, height: '100vh', background: '#f9fafb', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+      <div style={{ flex: 1, height: '100%', background: 'var(--bg-primary)', position: 'relative', overflow: 'hidden' }}>
         {/* Header */}
-        <div style={{ flexShrink: 0, background: 'white', boxShadow: '0 1px 3px rgba(0,0,0,0.1)', borderBottom: '1px solid #e5e7eb', padding: '1rem 1.5rem', zIndex: 10 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-              <button onClick={() => setCurrentView('home')} style={{ background: 'none', border: 'none', color: '#6b7280', fontSize: '1rem', cursor: 'pointer', padding: '0.5rem', borderRadius: '0.5rem' }} onMouseOver={(e) => e.target.style.color = '#1f2937'} onMouseOut={(e) => e.target.style.color = '#6b7280'}>
+        <div style={{ position: 'absolute', top: 0, left: 0, right: 0, height: '72px', background: 'var(--bg-header)', borderBottom: '1px solid var(--border)', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05)', padding: '0 1.5rem', display: 'flex', alignItems: 'center', justifyContent: 'space-between', zIndex: 50 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+              <button onClick={() => setCurrentView('home')} style={{ background: 'none', border: 'none', color: 'var(--text-muted)', fontSize: '1rem', cursor: 'pointer', padding: '0.5rem', borderRadius: '0.5rem' }} onMouseOver={(e) => e.target.style.color = '#1f2937'} onMouseOut={(e) => e.target.style.color = '#6b7280'}>
                 ← Back
               </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 {currentType && <currentType.icon size={24} color="#374151" />}
-                <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: '#1f2937' }}>
-                  {currentType?.title}
+                <h1 style={{ fontSize: '1.25rem', fontWeight: 'bold', color: 'var(--text-main)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: '300px' }}>
+                  {displayTitle}
                 </h1>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.875rem', color: '#6b7280' }}>
-              <button onClick={clearHistory} style={{ background: 'white', border: '1px solid #e5e7eb', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s' }} onMouseOver={(e) => { e.target.style.background = '#fef2f2'; e.target.style.borderColor = '#fca5a5'; }} onMouseOut={(e) => { e.target.style.background = 'white'; e.target.style.borderColor = '#e5e7eb'; }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              <button onClick={clearHistory} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s' }} onMouseOver={(e) => { e.target.style.background = '#fef2f2'; e.target.style.borderColor = '#fca5a5'; }} onMouseOut={(e) => { e.target.style.background = 'white'; e.target.style.borderColor = 'var(--border-light)'; }}>
                 Reset Session
               </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -438,40 +465,39 @@ const InterviewApp = () => {
                 <span>Live Session</span>
               </div>
             </div>
-          </div>
         </div>
 
         {/* Chat Area */}
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', maxWidth: '900px', margin: '0 auto', width: '100%', overflow: 'hidden' }}>
-          <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+        <div style={{ position: 'absolute', top: '72px', bottom: '88px', left: 0, right: 0, display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden' }}>
+          <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', justifyContent: currentMessages.length === 0 ? 'center' : 'flex-start' }}>
             {currentMessages.length === 0 && (
               <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
                 <Bot size={64} color="#9ca3af" style={{ margin: '0 auto 1rem' }} />
-                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: '#4b5563', marginBottom: '0.5rem' }}>
+                <h3 style={{ fontSize: '1.25rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
                   Ready to start your {currentType?.title.toLowerCase()}?
                 </h3>
-                <p style={{ color: '#6b7280' }}>Ask me anything or introduce yourself to begin!</p>
+                <p style={{ color: 'var(--text-muted)' }}>Ask me anything or introduce yourself to begin!</p>
               </div>
             )}
 
             {currentMessages.map((message, index) => (
-              <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem', flexDirection: message.type === 'user' ? 'row-reverse' : 'row' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: message.type === 'user' ? 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)' : '#374151', flexShrink: 0 }}>
-                  {message.type === 'user' ? <User size={20} color="white" /> : <Bot size={20} color="white" />}
+              <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', flexDirection: message.type === 'user' ? 'row-reverse' : 'row' }}>
+                <div style={{ width: '48px', height: '48px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: message.type === 'user' ? 'var(--msg-user-bg)' : 'var(--msg-bot-icon)', flexShrink: 0, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                  {message.type === 'user' ? <User size={24} color="white" /> : <Bot size={24} color="white" />}
                 </div>
-                <div style={{ flex: 1, maxWidth: '600px', textAlign: message.type === 'user' ? 'right' : 'left' }}>
-                  <div style={{ maxWidth: '70%', padding: '0.75rem 1rem', borderRadius: '1rem', marginBottom: '0.5rem', ...(message.type === 'user' ? { background: 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: 'white', marginLeft: 'auto' } : { background: 'white', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)' }) }}>
-                    <p style={{ fontSize: '0.875rem', lineHeight: '1.5', margin: 0 }}>
+                <div style={{ flex: 1, maxWidth: '650px', textAlign: message.type === 'user' ? 'right' : 'left' }}>
+                  <div style={{ maxWidth: '80%', padding: '1rem 1.25rem', borderRadius: '1.25rem', marginBottom: '0.5rem', ...(message.type === 'user' ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', color: 'white', marginLeft: 'auto', borderBottomRightRadius: '0.25rem', boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.2)' } : { background: 'var(--bg-card)', borderBottomLeftRadius: '0.25rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)' }) }}>
+                    <p style={{ fontSize: '0.875rem', lineHeight: '1.6', margin: 0, color: message.type === 'user' ? 'white' : 'var(--text-main)' }}>
                       {message.content}
                     </p>
                     {message.audioUrl && (
-                      <button onClick={() => playAudio(message.audioUrl)} style={{ marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem', color: '#6b7280', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem 0' }} onMouseOver={(e) => e.target.style.color = '#374151'} onMouseOut={(e) => e.target.style.color = '#6b7280'}>
-                        <Volume2 size={12} />
+                      <button onClick={() => playAudio(message.audioUrl)} style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: message.type === 'user' ? '#e0e7ff' : 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem 0' }} onMouseOver={(e) => e.target.style.opacity = '0.8'} onMouseOut={(e) => e.target.style.opacity = '1'}>
+                        <Volume2 size={14} />
                         <span>Play Audio</span>
                       </button>
                     )}
                   </div>
-                  <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: '#9ca3af', textAlign: message.type === 'user' ? 'right' : 'left' }}>
+                  <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-light)', textAlign: message.type === 'user' ? 'right' : 'left', padding: '0 0.5rem' }}>
                     {formatTime(message.timestamp)}
                   </div>
                 </div>
@@ -480,10 +506,10 @@ const InterviewApp = () => {
 
             {isLoading && (
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
-                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#374151', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'var(--bg-sidebar-hover)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                   <Bot size={20} color="white" />
                 </div>
-                <div style={{ background: 'white', border: '1px solid #e5e7eb', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)', borderRadius: '1rem', padding: '0.75rem 1rem' }}>
+                <div style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', boxShadow: '0 1px 3px rgba(0, 0, 0, 0.1)', borderRadius: '1rem', padding: '0.75rem 1rem' }}>
                   <div style={{ display: 'flex', gap: '0.25rem' }}>
                     <div style={{ width: '0.5rem', height: '0.5rem', borderRadius: '50%', background: '#9ca3af', animation: 'bounce 1.4s ease-in-out infinite both' }}></div>
                     <div style={{ width: '0.5rem', height: '0.5rem', borderRadius: '50%', background: '#9ca3af', animation: 'bounce 1.4s ease-in-out infinite both', animationDelay: '0.16s' }}></div>
@@ -495,35 +521,32 @@ const InterviewApp = () => {
             
             <div ref={messagesEndRef} />
           </div>
+        </div>
 
-          {/* Input Area */}
-          <div style={{ flexShrink: 0, background: 'white', borderTop: '1px solid #e5e7eb', padding: '1rem 1.5rem', zIndex: 10 }}>
-            <div style={{ display: 'flex', alignItems: 'end', gap: '0.75rem' }}>
+        {/* Input Area */}
+        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '88px', padding: '1rem 1.5rem', background: 'transparent', zIndex: 10, boxSizing: 'border-box' }}>
+            <div style={{ maxWidth: '900px', margin: '0 auto', width: '100%', display: 'flex', alignItems: 'end', gap: '0.75rem', background: 'var(--bg-card)', padding: '0.75rem', borderRadius: '2rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025)', border: '1px solid var(--border-light)', boxSizing: 'border-box' }}>
               <div style={{ flex: 1 }}>
                 <textarea
                   value={currentMessage}
                   onChange={(e) => setCurrentMessage(e.target.value)}
                   onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
                   placeholder="Type your message or use voice input..."
-                  style={{ width: '100%', padding: '0.75rem 1rem', border: '1px solid #d1d5db', borderRadius: '1rem', resize: 'none', fontSize: '0.875rem', fontFamily: 'inherit', outline: 'none' }}
-                  rows="2"
+                  style={{ width: '100%', padding: '0.5rem 1rem', border: 'none', resize: 'none', fontSize: '1rem', fontFamily: 'inherit', outline: 'none', background: 'transparent' }}
+                  rows="1"
                   disabled={isLoading}
-                  onFocus={(e) => e.target.style.borderColor = '#3b82f6'}
-                  onBlur={(e) => e.target.style.borderColor = '#d1d5db'}
                 />
               </div>
               
-              <button onClick={isRecording ? stopRecording : startRecording} style={{ background: isRecording ? '#ef4444' : '#f3f4f6', color: isRecording ? 'white' : '#374151', border: isRecording ? '1px solid #ef4444' : '1px solid #d1d5db', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', opacity: isRecording ? '0.8' : '1' }} disabled={isLoading}>
+              <button onClick={isRecording ? stopRecording : startRecording} style={{ background: isRecording ? '#ef4444' : '#f1f5f9', color: isRecording ? 'white' : '#475569', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', opacity: isRecording ? '0.8' : '1' }} disabled={isLoading}>
                 {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
               </button>
               
-              <button onClick={sendMessage} style={{ background: !currentMessage.trim() || isLoading ? '#9ca3af' : 'linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%)', color: 'white', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !currentMessage.trim() || isLoading ? 'not-allowed' : 'pointer', transition: 'all 0.2s' }} disabled={!currentMessage.trim() || isLoading}>
-                <Send size={20} />
+              <button onClick={sendMessage} style={{ background: !currentMessage.trim() || isLoading ? '#cbd5e1' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', color: 'white', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !currentMessage.trim() || isLoading ? 'not-allowed' : 'pointer', transition: 'all 0.2s', boxShadow: !currentMessage.trim() || isLoading ? 'none' : '0 4px 6px -1px rgba(79, 70, 229, 0.3)' }} disabled={!currentMessage.trim() || isLoading}>
+                <Send size={20} style={{ marginLeft: '2px' }} />
               </button>
             </div>
           </div>
-        </div>
-
         {/* Hidden audio element for TTS playback */}
         <audio ref={audioRef} />
         
@@ -537,12 +560,56 @@ const InterviewApp = () => {
       </div>
     );
   };
-
+  // Force Webpack recompile
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
+    <>
+      <style>{`
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; overflow: hidden; background: var(--bg-primary); color: var(--text-main); }
+        
+        :root {
+          --bg-primary: #f8fafc;
+          --bg-secondary: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+          --bg-card: white;
+          --bg-header: #ffffff;
+          --bg-input: white;
+          --bg-sidebar: #1f2937;
+          --bg-sidebar-hover: #374151;
+          --text-main: #1f2937;
+          --text-muted: #6b7280;
+          --text-light: #9ca3af;
+          --border: #e2e8f0;
+          --border-light: #e5e7eb;
+          --shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+          --msg-user-bg: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+          --msg-bot-bg: white;
+          --msg-bot-icon: #1e293b;
+        }
+
+        [data-theme='dark'] {
+          --bg-primary: #0f172a;
+          --bg-secondary: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          --bg-card: #1e293b;
+          --bg-header: #1e293b;
+          --bg-input: #1e293b;
+          --bg-sidebar: #020617;
+          --bg-sidebar-hover: #1e293b;
+          --text-main: #f8fafc;
+          --text-muted: #94a3b8;
+          --text-light: #64748b;
+          --border: #334155;
+          --border-light: #475569;
+          --shadow: 0 4px 6px -1px rgba(0,0,0,0.5);
+          --msg-user-bg: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+          --msg-bot-bg: #1e293b;
+          --msg-bot-icon: #0f172a;
+        }
+      `}</style>
+      <div style={{ display: 'flex', height: '100vh', width: '100vw', overflow: 'hidden', margin: 0, padding: 0, boxSizing: 'border-box' }}>
       {renderSidebar()}
       {renderContent()}
     </div>
+    </>
   );
 };
 
