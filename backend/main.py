@@ -8,6 +8,8 @@ from openai import OpenAI
 import os
 import hashlib
 import asyncio
+import bcrypt
+import uuid
 from datetime import datetime
 import uvicorn
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -29,9 +31,10 @@ db = mongo_client[MONGO_DB_NAME]
 app = FastAPI(title="AI Interview Platform", version="1.0.0")
 
 # Enable CORS
+FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+    allow_origins=[FRONTEND_URL, "http://127.0.0.1:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -55,6 +58,48 @@ class ChatResponse(BaseModel):
 class ClearHistoryRequest(BaseModel):
     session_id: str
     round_type: str
+
+
+class UserSignup(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class UserLogin(BaseModel):
+    email: str
+    password: str
+
+@app.post("/signup")
+async def signup(user: UserSignup):
+    existing = await db.users.find_one({"email": user.email})
+    if existing:
+        raise HTTPException(status_code=400, detail="Email already registered")
+    
+    salt = bcrypt.gensalt()
+    hashed = bcrypt.hashpw(user.password.encode('utf-8'), salt)
+    
+    user_id = str(uuid.uuid4())
+    user_doc = {
+        "user_id": user_id,
+        "name": user.name,
+        "email": user.email,
+        "password": hashed.decode('utf-8'),
+        "created_at": datetime.now().isoformat()
+    }
+    await db.users.insert_one(user_doc)
+    
+    return {"user_id": user_id, "name": user.name, "email": user.email}
+
+@app.post("/login")
+async def login(user: UserLogin):
+    user_doc = await db.users.find_one({"email": user.email})
+    if not user_doc:
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+        
+    if not bcrypt.checkpw(user.password.encode('utf-8'), user_doc["password"].encode('utf-8')):
+        raise HTTPException(status_code=400, detail="Invalid email or password")
+        
+    return {"user_id": user_doc["user_id"], "name": user_doc["name"], "email": user_doc["email"]}
 
 # Interview prompts
 INTERVIEW_PROMPTS = {
@@ -339,11 +384,11 @@ async def chat_endpoint(chat_message: ChatMessage):
         print(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
-@app.get("/history/{session_id}/{round_type}")
-async def get_history(session_id: str, round_type: str):
+@app.get("/history/{session_id}/{round_type}/{user_id}")
+async def get_history(session_id: str, round_type: str, user_id: str):
     """Fetch conversation history for a session and round"""
     try:
-        session_doc = await db.sessions.find_one({"session_id": session_id, "round_type": round_type})
+        session_doc = await db.sessions.find_one({"session_id": session_id, "round_type": round_type, "user_id": user_id})
         if session_doc:
             # We don't return the _id to avoid serialization issues
             return {"messages": session_doc.get("messages", [])}
@@ -392,4 +437,5 @@ async def root():
     return {"message": "AI Interview Platform API", "version": "1.0.0"}
 
 if __name__ == "__main__":
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    port = int(os.getenv("PORT", 8000))
+    uvicorn.run("main:app", host="0.0.0.0", port=port, reload=True)

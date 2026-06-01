@@ -1,5 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, Send, Volume2, User, Bot, Clock, Briefcase, Code, Users, Settings, Plus, Sun, Moon } from 'lucide-react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { Mic, MicOff, Send, Volume2, User, Bot, Clock, Briefcase, Code, Users, Settings, Plus, Sun, Moon, LogOut, Eye, EyeOff } from 'lucide-react';
+
+const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
 const InterviewCard = ({ type, onClick, cardStyles }) => {
   const [isHovered, setIsHovered] = useState(false);
@@ -72,19 +74,153 @@ const InterviewCard = ({ type, onClick, cardStyles }) => {
   );
 };
 
+
+const AuthView = ({ onLogin }) => {
+  const [isLogin, setIsLogin] = useState(true);
+  const [name, setName] = useState('');
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    
+    try {
+      const endpoint = isLogin ? '/login' : '/signup';
+      const payload = isLogin ? { email, password } : { name, email, password };
+      
+      const res = await fetch(`${API_BASE_URL}${endpoint}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail || 'Authentication failed');
+      
+      onLogin(data.user_id, data.name, data.email);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <>
+      <style>{`
+        * { box-sizing: border-box; }
+        body { margin: 0; padding: 0; overflow: hidden; background: var(--bg-primary); color: var(--text-main); }
+        
+        :root {
+          --bg-primary: #f8fafc;
+          --bg-secondary: linear-gradient(135deg, #f9fafb 0%, #f3f4f6 100%);
+          --bg-card: white;
+          --bg-header: #ffffff;
+          --bg-input: white;
+          --bg-sidebar: #1f2937;
+          --bg-sidebar-hover: #374151;
+          --text-main: #1f2937;
+          --text-muted: #6b7280;
+          --text-light: #9ca3af;
+          --border: #e2e8f0;
+          --border-light: #e5e7eb;
+          --shadow: 0 4px 6px -1px rgba(0,0,0,0.05);
+          --msg-user-bg: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+          --msg-bot-bg: white;
+          --msg-bot-icon: #1e293b;
+        }
+
+        [data-theme='dark'] {
+          --bg-primary: #0f172a;
+          --bg-secondary: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+          --bg-card: #1e293b;
+          --bg-header: #1e293b;
+          --bg-input: #1e293b;
+          --bg-sidebar: #020617;
+          --bg-sidebar-hover: #1e293b;
+          --text-main: #f8fafc;
+          --text-muted: #94a3b8;
+          --text-light: #64748b;
+          --border: #334155;
+          --border-light: #475569;
+          --shadow: 0 4px 6px -1px rgba(0,0,0,0.5);
+          --msg-user-bg: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+          --msg-bot-bg: #1e293b;
+          --msg-bot-icon: #0f172a;
+        }
+      `}</style>
+      <div style={{ display: 'flex', minHeight: '100vh', width: '100vw', alignItems: 'center', justifyContent: 'center', background: 'var(--bg-secondary)', padding: '1rem', boxSizing: 'border-box' }}>
+        <div style={{ width: '100%', maxWidth: '400px', background: 'var(--bg-card)', padding: '2.5rem', borderRadius: '1.5rem', boxShadow: 'var(--shadow)', border: '1px solid var(--border)' }}>
+          <div style={{ textAlign: 'center', marginBottom: '2rem' }}>
+            <div style={{ width: '48px', height: '48px', background: 'linear-gradient(135deg, #3b82f6 0%, #2563eb 100%)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+              <Bot size={28} color="white" />
+            </div>
+            <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)', margin: '0 0 0.5rem 0' }}>
+              {isLogin ? 'Welcome Back' : 'Create an Account'}
+            </h2>
+            <p style={{ color: 'var(--text-muted)', fontSize: '0.875rem', margin: 0 }}>
+              {isLogin ? 'Sign in to access your interviews' : 'Sign up to start practicing'}
+            </p>
+          </div>
+          
+          {error && (
+            <div style={{ background: '#fee2e2', color: '#ef4444', padding: '0.75rem', borderRadius: '0.5rem', fontSize: '0.875rem', marginBottom: '1.5rem', textAlign: 'center' }}>
+              {error}
+            </div>
+          )}
+          
+          <form onSubmit={handleSubmit} style={{ display: 'flex', flexDirection: 'column', gap: '1.25rem' }}>
+            {!isLogin && (
+              <div>
+                <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-main)', marginBottom: '0.5rem' }}>Name</label>
+                <input type="text" required value={name} onChange={e => setName(e.target.value)} style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' }} placeholder="John Doe" />
+              </div>
+            )}
+            
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-main)', marginBottom: '0.5rem' }}>Email Address</label>
+              <input type="email" required value={email} onChange={e => setEmail(e.target.value)} style={{ width: '100%', padding: '0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' }} placeholder="you@example.com" />
+            </div>
+            
+            <div>
+              <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: '500', color: 'var(--text-main)', marginBottom: '0.5rem' }}>Password</label>
+              <div style={{ position: 'relative' }}>
+                <input type={showPassword ? 'text' : 'password'} required value={password} onChange={e => setPassword(e.target.value)} style={{ width: '100%', padding: '0.75rem 2.5rem 0.75rem 1rem', borderRadius: '0.5rem', border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-main)', fontSize: '0.875rem', outline: 'none', boxSizing: 'border-box' }} placeholder="••••••••" />
+                <button type="button" onClick={() => setShowPassword(!showPassword)} style={{ position: 'absolute', right: '0.75rem', top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', cursor: 'pointer', color: 'var(--text-muted)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 0 }}>
+                  {showPassword ? <EyeOff size={18} /> : <Eye size={18} />}
+                </button>
+              </div>
+            </div>
+            
+            <button type="submit" disabled={loading} style={{ width: '100%', padding: '0.875rem', background: '#3b82f6', color: 'white', border: 'none', borderRadius: '0.5rem', fontSize: '1rem', fontWeight: '600', cursor: loading ? 'not-allowed' : 'pointer', marginTop: '0.5rem', transition: 'background 0.2s', opacity: loading ? 0.7 : 1 }}>
+              {loading ? 'Please wait...' : (isLogin ? 'Sign In' : 'Sign Up')}
+            </button>
+          </form>
+          
+          <div style={{ textAlign: 'center', marginTop: '1.5rem' }}>
+            <button onClick={() => { setIsLogin(!isLogin); setError(''); }} style={{ background: 'none', border: 'none', color: '#3b82f6', fontSize: '0.875rem', fontWeight: '500', cursor: 'pointer', padding: '0.5rem' }}>
+              {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+};
+
 const InterviewApp = () => {
+
   const [currentView, setCurrentView] = useState('home');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [messages, setMessages] = useState({});
-  const [userId] = useState(() => {
-    let id = localStorage.getItem('chat_user_id');
-    if (!id) {
-      id = 'user_' + Math.random().toString(36).substr(2, 9);
-      localStorage.setItem('chat_user_id', id);
-    }
-    return id;
-  });
+  const [userId, setUserId] = useState(() => localStorage.getItem('chat_user_id'));
+  const [userName, setUserName] = useState(() => localStorage.getItem('chat_user_name'));
   const [sessionId, setSessionId] = useState(() => {
     let id = localStorage.getItem('chat_session_id');
     if (!id) {
@@ -178,9 +314,10 @@ const InterviewApp = () => {
     };
   }, []);
 
-  const fetchSessionsList = async () => {
+  const fetchSessionsList = useCallback(async () => {
     try {
-      const response = await fetch(`http://localhost:8000/sessions/${userId}`);
+      if (!userId) return;
+      const response = await fetch(`${API_BASE_URL}/sessions/${userId}`);
       if (response.ok) {
         const data = await response.json();
         setSessionsList(data.sessions);
@@ -188,11 +325,11 @@ const InterviewApp = () => {
     } catch (err) {
       console.error("Failed to fetch sessions list:", err);
     }
-  };
+  }, [userId]);
 
   useEffect(() => {
     fetchSessionsList();
-  }, [userId]);
+  }, [fetchSessionsList]);
 
   // Stop recording when view changes (e.g., navigating back to home or another round)
   useEffect(() => {
@@ -208,7 +345,8 @@ const InterviewApp = () => {
     if (currentView !== 'home') {
       const fetchHistory = async () => {
         try {
-          const response = await fetch(`http://localhost:8000/history/${sessionId}/${currentView}`);
+          if (!userId) return;
+          const response = await fetch(`${API_BASE_URL}/history/${sessionId}/${currentView}/${userId}`);
           if (response.ok) {
             const data = await response.json();
             setMessages(prev => ({ ...prev, [currentView]: data.messages }));
@@ -219,7 +357,7 @@ const InterviewApp = () => {
       };
       fetchHistory();
     }
-  }, [currentView, recognition, sessionId, isRecording]);
+  }, [currentView, recognition, sessionId, isRecording, userId]);
 
   useEffect(() => {
     if (messagesEndRef.current && messagesEndRef.current.parentElement) {
@@ -264,7 +402,7 @@ const InterviewApp = () => {
     setIsLoading(true);
 
     try {
-      const response = await fetch('http://localhost:8000/chat', {
+      const response = await fetch(`${API_BASE_URL}/chat`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: userMessage, round_type: currentView, session_id: sessionId, user_id: userId })
@@ -282,7 +420,7 @@ const InterviewApp = () => {
       }));
 
       if (data.audio_url && audioRef.current) {
-        audioRef.current.src = `http://localhost:8000${data.audio_url}`;
+        audioRef.current.src = `${API_BASE_URL}${data.audio_url}`;
         audioRef.current.play().catch(console.error);
       }
     } catch (error) {
@@ -302,7 +440,7 @@ const InterviewApp = () => {
 
   const clearHistory = async () => {
     try {
-      await fetch('http://localhost:8000/clear-history', {
+      await fetch(`${API_BASE_URL}/clear-history`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ session_id: sessionId, round_type: currentView })
@@ -316,7 +454,7 @@ const InterviewApp = () => {
 
   const playAudio = (audioUrl) => {
     if (audioRef.current) {
-      audioRef.current.src = `http://localhost:8000${audioUrl}`;
+      audioRef.current.src = `${API_BASE_URL}${audioUrl}`;
       audioRef.current.play().catch(console.error);
     }
   };
@@ -328,6 +466,21 @@ const InterviewApp = () => {
     } catch (e) {
       return '';
     }
+  };
+
+
+  const handleLogout = () => {
+    localStorage.removeItem('chat_user_id');
+    localStorage.removeItem('chat_user_name');
+    localStorage.removeItem('chat_session_id');
+    const newSessionId = 'session_' + Math.random().toString(36).substr(2, 9) + '_' + Date.now();
+    localStorage.setItem('chat_session_id', newSessionId);
+    setSessionId(newSessionId);
+    setMessages({});
+    setSessionsList([]);
+    setUserId(null);
+    setUserName(null);
+    setCurrentView('home');
   };
 
   const handleNewSession = () => {
@@ -407,6 +560,15 @@ const InterviewApp = () => {
           {isDarkMode ? <Sun size={18} /> : <Moon size={18} />}
           <span>{isDarkMode ? 'Light Mode' : 'Dark Mode'}</span>
         </button>
+        <button 
+          onClick={handleLogout}
+          style={{ width: '100%', background: 'transparent', color: '#ef4444', border: 'none', padding: '0.5rem 0.75rem', borderRadius: '0.5rem', cursor: 'pointer', fontSize: '0.875rem', display: 'flex', alignItems: 'center', gap: '0.75rem', transition: 'background 0.2s', marginTop: '0.5rem' }}
+          onMouseOver={(e) => e.currentTarget.style.background = 'var(--bg-sidebar-hover)'}
+          onMouseOut={(e) => e.currentTarget.style.background = 'transparent'}
+        >
+          <LogOut size={18} />
+          <span>Log Out</span>
+        </button>
       </div>
     </div>
   );
@@ -417,9 +579,12 @@ const InterviewApp = () => {
         <div style={{ flex: 1, minHeight: '100vh', overflowY: 'auto', background: 'var(--bg-secondary)', padding: '2rem 1rem' }}>
           <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
             <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
-              <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '1rem' }}>
-                AI Interview Platform
+              <h1 style={{ fontSize: '2.5rem', fontWeight: 'bold', color: 'var(--text-main)', marginBottom: '0.5rem' }}>
+                Welcome, {userName || 'Guest'}!
               </h1>
+              <h2 style={{ fontSize: '1.5rem', fontWeight: '600', color: 'var(--text-main)', marginBottom: '1rem', opacity: 0.8 }}>
+                AI Interview Platform
+              </h2>
               <p style={{ fontSize: '1.25rem', color: 'var(--text-muted)', maxWidth: '600px', margin: '0 auto', lineHeight: '1.6' }}>
                 Practice your interview skills with AI-powered mock interviews across different rounds
               </p>
@@ -561,6 +726,16 @@ const InterviewApp = () => {
     );
   };
   // Force Webpack recompile
+  if (!userId) {
+    return <AuthView onLogin={(id, name) => {
+      localStorage.setItem('chat_user_id', id);
+      localStorage.setItem('chat_user_name', name);
+      setUserId(id);
+      setUserName(name);
+    }} />;
+  }
+
+
   return (
     <>
       <style>{`
