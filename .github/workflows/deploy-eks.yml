@@ -1,0 +1,84 @@
+name: Deploy to EKS
+
+on:
+  push:
+    branches:
+      - main
+
+env:
+  AWS_REGION: us-east-1                   # Set this to your preferred AWS region
+  ECR_REPOSITORY_FRONTEND: ai-interview-frontend # Name of your frontend ECR repository
+  ECR_REPOSITORY_BACKEND: ai-interview-backend   # Name of your backend ECR repository
+  EKS_CLUSTER_NAME: ai-interview-cluster         # Name of your EKS cluster
+
+jobs:
+  deploy:
+    name: Build and Deploy
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v3
+
+    - name: Configure AWS credentials
+      uses: aws-actions/configure-aws-credentials@v2
+      with:
+        aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+        aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        aws-region: ${{ env.AWS_REGION }}
+
+    - name: Login to Amazon ECR
+      id: login-ecr
+      uses: aws-actions/amazon-ecr-login@v1
+
+    - name: Build, tag, and push backend image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        cd backend
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:latest
+
+    - name: Build, tag, and push frontend image to Amazon ECR
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        cd frontend
+        docker build -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG -t $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest .
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG
+        docker push $ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:latest
+
+    - name: Update kubeconfig
+      run: aws eks update-kubeconfig --name ${{ env.EKS_CLUSTER_NAME }} --region ${{ env.AWS_REGION }}
+
+    - name: Deploy to Amazon EKS
+      env:
+        ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+        IMAGE_TAG: ${{ github.sha }}
+      run: |
+        # Apply namespace first
+        kubectl apply -f k8s/namespace.yaml
+        
+        # Apply configmap
+        kubectl apply -f k8s/configmap.yaml
+        
+        # Apply secrets (if you want to automate this, store secrets in GitHub and use envsubst)
+        # Note: Usually better to apply secrets manually once, but if you want CI/CD to handle it, uncomment below
+        # kubectl apply -f k8s/secrets.yaml
+
+        # Deploy backend (update image dynamically)
+        sed -i "s|AWS_ACCOUNT_ID.dkr.ecr.AWS_REGION.amazonaws.com/ai-interview-backend:latest|$ECR_REGISTRY/$ECR_REPOSITORY_BACKEND:$IMAGE_TAG|g" k8s/backend-deployment.yaml
+        kubectl apply -f k8s/backend-deployment.yaml
+        kubectl apply -f k8s/backend-service.yaml
+
+        # Deploy frontend (update image dynamically)
+        sed -i "s|AWS_ACCOUNT_ID.dkr.ecr.AWS_REGION.amazonaws.com/ai-interview-frontend:latest|$ECR_REGISTRY/$ECR_REPOSITORY_FRONTEND:$IMAGE_TAG|g" k8s/frontend-deployment.yaml
+        kubectl apply -f k8s/frontend-deployment.yaml
+        kubectl apply -f k8s/frontend-service.yaml
+
+        # Restart deployments to pick up any config/secret changes
+        kubectl rollout restart deployment backend-deployment -n ai-interview-platform
+        kubectl rollout restart deployment frontend-deployment -n ai-interview-platform

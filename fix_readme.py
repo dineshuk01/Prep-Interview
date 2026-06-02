@@ -1,4 +1,6 @@
-# AI Interview Platform
+import os
+
+readme_content = """# AI Interview Platform
 
 A full-stack, AI-powered mock interview application that simulates real-world technical and behavioral interviews. It uses advanced language models and text-to-speech capabilities to give candidates a realistic, interactive practice environment. 
 
@@ -63,7 +65,7 @@ Prep-Interview/
 2. Create and activate a Python virtual environment:
    ```bash
    python -m venv venv
-   source venv/bin/activate  # On Windows use: .\venv\Scripts\activate
+   source venv/bin/activate  # On Windows use: .\\venv\\Scripts\\activate
    ```
 3. Install dependencies:
    ```bash
@@ -122,3 +124,13 @@ Prep-Interview/
 
 ## 📄 License
 Distributed under the MIT License. See `LICENSE` for more information.
+"""
+
+file_path = r"d:\AI\README.md"
+if os.path.exists(file_path):
+    os.remove(file_path)
+
+with open(file_path, "w", encoding="utf-8") as f:
+    f.write(readme_content)
+
+print("Rewrote README.md in pure UTF-8!")
