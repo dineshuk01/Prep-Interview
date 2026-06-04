@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, BackgroundTasks
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,10 +15,12 @@ import uvicorn
 from motor.motor_asyncio import AsyncIOMotorClient
 import certifi
 
+from agent import run_agent, run_evaluation_workflow
+
 # Load env variables
 load_dotenv()
 
-# Initialize OpenAI client
+# Initialize OpenAI client (still used for TTS)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Initialize MongoDB
@@ -28,7 +30,7 @@ mongo_client = AsyncIOMotorClient(MONGO_URI, tlsCAFile=certifi.where())
 db = mongo_client[MONGO_DB_NAME]
 
 # Initialize FastAPI app
-app = FastAPI(title="AI Interview Platform", version="1.0.0")
+app = FastAPI(title="AI Interview Platform – Agentic", version="2.0.0")
 
 # Enable CORS
 FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
@@ -44,20 +46,33 @@ app.add_middleware(
 os.makedirs("static/audio", exist_ok=True)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-# Request/Response Models
+
+# ─────────────────────────────────────────────
+# Request / Response Models
+# ─────────────────────────────────────────────
+
 class ChatMessage(BaseModel):
     message: str
     round_type: str
     session_id: str
     user_id: str
 
+
 class ChatResponse(BaseModel):
     response: str
     audio_url: Optional[str] = None
+    tools_used: List[str] = []
+
 
 class ClearHistoryRequest(BaseModel):
     session_id: str
     round_type: str
+
+
+class FinishInterviewRequest(BaseModel):
+    session_id: str
+    round_type: str
+    user_id: str
 
 
 class UserSignup(BaseModel):
@@ -65,19 +80,25 @@ class UserSignup(BaseModel):
     email: str
     password: str
 
+
 class UserLogin(BaseModel):
     email: str
     password: str
+
+
+# ─────────────────────────────────────────────
+# Auth Endpoints
+# ─────────────────────────────────────────────
 
 @app.post("/signup")
 async def signup(user: UserSignup):
     existing = await db.users.find_one({"email": user.email})
     if existing:
         raise HTTPException(status_code=400, detail="Email already registered")
-    
+
     salt = bcrypt.gensalt()
     hashed = bcrypt.hashpw(user.password.encode('utf-8'), salt)
-    
+
     user_id = str(uuid.uuid4())
     user_doc = {
         "user_id": user_id,
@@ -87,230 +108,27 @@ async def signup(user: UserSignup):
         "created_at": datetime.now().isoformat()
     }
     await db.users.insert_one(user_doc)
-    
     return {"user_id": user_id, "name": user.name, "email": user.email}
+
 
 @app.post("/login")
 async def login(user: UserLogin):
     user_doc = await db.users.find_one({"email": user.email})
     if not user_doc:
         raise HTTPException(status_code=400, detail="Invalid email or password")
-        
+
     if not bcrypt.checkpw(user.password.encode('utf-8'), user_doc["password"].encode('utf-8')):
         raise HTTPException(status_code=400, detail="Invalid email or password")
-        
+
     return {"user_id": user_doc["user_id"], "name": user_doc["name"], "email": user_doc["email"]}
 
-# Interview prompts
-INTERVIEW_PROMPTS = {
-    "technical": """
-You are an AI interview assistant for an AI-powered Interview Website.
-Step 1:
-- Greet the candidate politely.
-- Ask: "Which technical round do you want to give — Data Analyst or Software Development Engineer (SDE)?"
-- Wait for the candidate's choice before starting.
 
-Step 2:
-If candidate chooses Data Analyst:
----------------------------------
-- Role: Technical Interviewer for Data Analyst position.
-- Skills to test: SQL, Python (pandas, NumPy), Data Visualization, Statistics, Real-world problem solving.
-- Question Sequence:
-    1. SQL Basics Example: "Write a query to find the top 3 products by total sales."
-    2. SQL Advanced Example: "Using a sales table, find month-over-month growth percentage for each product."
-    3. Python Data Wrangling Example: "In pandas, replace all NaN values in a column with the column median."
-    4. Visualization Example: "How would you show year-over-year sales growth in a Power BI dashboard?"
-    5. Statistics Example: "Explain p-value and its significance in hypothesis testing."
-    6. Real-world Example: "Given 6 months of customer transactions, how would you identify customer churn risk?"
-- Rules:
-    - Ask one question at a time.
-    - Give short feedback after each answer.
-    - Increase difficulty gradually.
-    - Keep tone professional but friendly.
-    - End with a short performance summary.
+# ─────────────────────────────────────────────
+# TTS Helper
+# ─────────────────────────────────────────────
 
-If candidate chooses SDE:
---------------------------
-- Role: Technical Interviewer for Software Development Engineer position.
-- Skills to test: Data Structures, Algorithms, Problem-solving, System Design, Core CS Fundamentals.
-- Question Sequence:
-    1. DSA Easy Example: "Reverse a string without using built-in reverse functions."
-    2. DSA Medium Example: "Given an array, find the length of the longest subarray with sum equal to K."
-    3. DSA Advanced Example: "Implement an LRU cache with O(1) operations."
-    4. System Design Example: "Design a URL shortening service like Bit.ly. Explain database schema and API flow."
-    5. Core CS Example: "What is the difference between process and thread?"
-    6. Advanced CS Example: "Explain ACID properties in databases with real examples."
-- Rules:
-    - Ask one question at a time.
-    - Give short feedback after each answer.
-    - Increase difficulty gradually.
-    - Keep tone professional but friendly.
-    - End with a short performance summary.
-
-General Interview Rules for Both:
-----------------------------------
-- Never ask the next question until candidate responds to the current one.
-- Give hints if candidate struggles, but never give the full answer unless requested.
-- Stay consistent with the chosen round throughout the interview.
-""",
-    "hr": """
-You are an AI interviewer for the HR Round of an interview.
-
-Step 1:
-- Greet the candidate politely.
-- Ask: "Which HR round do you want to give — Data Analyst or Software Development Engineer (SDE)?"
-- Wait for the candidate's choice before starting.
-
-Step 2:
-If candidate chooses Data Analyst HR Round:
--------------------------------------------
-- Focus on assessing:
-    1. Communication skills
-    2. Problem-solving attitude
-    3. Ability to work with data teams & business stakeholders
-    4. Career motivation
-- Question Sequence (ask one at a time):
-    1. "Tell me about yourself."
-    2. "Why do you want to be a Data Analyst?"
-    3. "Describe a time you worked with messy or incomplete data."
-    4. "How do you prioritize tasks when multiple analysis requests come in?"
-    5. "Where do you see yourself in 5 years?"
-    6. "What steps do you take to communicate technical findings to a non-technical audience?"
-- Rules:
-    - Give short feedback after each answer.
-    - Keep tone friendly and encouraging.
-    - Use follow-up questions if the answer is too short.
-    - End with a brief HR feedback summary.
-
-If candidate chooses SDE HR Round:
-----------------------------------
-- Focus on assessing:
-    1. Teamwork & collaboration
-    2. Problem-solving mindset
-    3. Career motivation in software development
-    4. Adaptability to changing requirements
-- Question Sequence (ask one at a time):
-    1. "Tell me about yourself."
-    2. "Why do you want to work as a Software Development Engineer?"
-    3. "Describe a time you solved a challenging coding problem under pressure."
-    4. "How do you handle situations when project deadlines are unrealistic?"
-    5. "What is your approach when working in a team with diverse skill levels?"
-    6. "How do you keep yourself updated with new technologies?"
-- Rules:
-    - Give short feedback after each answer.
-    - Keep tone friendly and encouraging.
-    - Use follow-up questions if the answer is too short.
-    - End with a brief HR feedback summary.
-
-General HR Interview Rules for Both:
--------------------------------------
-- Ask one question at a time.
-- Provide a conversational and empathetic tone.
-- Do not jump to next question until candidate responds.
-- If candidate’s answer is vague, politely ask for more details.
-- At the end, provide a short performance summary highlighting strengths and areas of improvement.
-""",
-    "system-design": """
-You are an AI interviewer for the System Design Round.
-
-- Ask the candidate which role: Data Analyst System Design or SDE System Design.
-
-If Data Analyst System Design:
-------------------------------
-- Focus on designing analytics systems, dashboards, data pipelines.
-- Example:
-    Q1: "Design a dashboard for monitoring sales performance in real-time."
-    Q2: "How would you create a pipeline to clean and aggregate data from multiple sources?"
-- After each answer:
-    - Check correctness, feasibility, and completeness.
-    - If wrong or incomplete, explain the correct design with reasoning and diagrams (if needed).
-
-If SDE System Design:
----------------------
-- Focus on large-scale system architecture.
-- Example:
-    Q1: "Design a URL shortening service like Bit.ly."
-    Q2: "Design a scalable chat application like WhatsApp."
-- Apply same correctness check and explanation rules.
-
-General:
---------
-- Increase complexity step-by-step.
-- Provide optimal solution with pros/cons if the candidate misses points.
-""",
-    "case-study": """
-You are an AI interviewer for the Case Study Round.
-
-Step 1:
-- Ask: "Which case study round do you want — Data Analyst or SDE?"
-
-If Data Analyst Case Study:
----------------------------
-- Use real-world inspired problems (Amazon, Netflix, Zomato, etc.).
-- Increase complexity gradually.
-- After candidate answers:
-    1. Check for correct approach and reasoning.
-    2. If wrong/incomplete, explain the right approach and give the correct solution.
-    3. Link next question to previous answer.
-
-Example Flow:
-1. Amazon: "You have last month's sales data. Find the top-selling category."
-2. Zomato: "Food orders dropped by 20% last week. How would you investigate?"
-3. Netflix: "Use viewing history to improve recommendations."
-
-If SDE Case Study:
-------------------
-- Use real-world inspired problems (Uber, WhatsApp, YouTube).
-- Example Flow:
-    1. Uber: "Design ride-matching system."
-    2. WhatsApp: "Real-time messaging to millions."
-    3. YouTube: "Video storage & streaming."
-
-General Case Study Rules:
--------------------------
-- Always correct candidate if wrong.
-- Provide step-by-step reasoning for correct answer.
-- Increase level in each step.
-"""
-}
-
-def get_system_prompt(round_type: str) -> str:
-    return INTERVIEW_PROMPTS.get(round_type, INTERVIEW_PROMPTS["technical"])
-
-async def generate_response(message: str, round_type: str, history: List[Dict]) -> str:
-    """Generate AI response using OpenAI GPT"""
-    try:
-        messages = [
-            {"role": "system", "content": get_system_prompt(round_type)}
-        ]
-
-        # Keep only last 10 messages
-        for msg in history[-10:]:
-            if msg["type"] == "user":
-                messages.append({"role": "user", "content": msg["content"]})
-            elif msg["type"] == "bot":
-                messages.append({"role": "assistant", "content": msg["content"]})
-
-        messages.append({"role": "user", "content": message})
-
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=messages,
-                max_tokens=500,
-                temperature=0.7
-            )
-        )
-
-        return response.choices[0].message.content.strip()
-
-    except Exception as e:
-        print(f"Error generating response: {e}")
-        return "I apologize, but I'm having trouble generating a response right now."
-
-async def generate_audio(text: str) -> str:
-    """Generate audio using OpenAI TTS"""
+async def generate_audio(text: str) -> Optional[str]:
+    """Generate audio using OpenAI TTS and cache it."""
     try:
         text_hash = hashlib.md5(text.encode()).hexdigest()
         audio_filename = f"audio_{text_hash}.mp3"
@@ -322,9 +140,9 @@ async def generate_audio(text: str) -> str:
         response = await asyncio.get_event_loop().run_in_executor(
             None,
             lambda: client.audio.speech.create(
-                model="gpt-4o-mini-tts",  # or "tts-1"
+                model="tts-1",
                 voice="alloy",
-                input=text
+                input=text[:4096]   # TTS limit
             )
         )
 
@@ -332,34 +150,52 @@ async def generate_audio(text: str) -> str:
             f.write(response.read())
 
         return f"/static/audio/{audio_filename}"
-
     except Exception as e:
         print(f"Error generating audio: {e}")
         return None
 
+
+# ─────────────────────────────────────────────
+# Chat Endpoint – now goes through the Agent
+# ─────────────────────────────────────────────
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat_endpoint(chat_message: ChatMessage):
-    """Main chat endpoint for interview interactions"""
+    """Main chat endpoint – routes through the LangChain agent with tools."""
     try:
         # Fetch history from MongoDB
-        session_doc = await db.sessions.find_one({"session_id": chat_message.session_id, "round_type": chat_message.round_type})
+        session_doc = await db.sessions.find_one({
+            "session_id": chat_message.session_id,
+            "round_type": chat_message.round_type
+        })
         history = session_doc.get("messages", []) if session_doc else []
 
-        ai_response = await generate_response(
-            chat_message.message,
-            chat_message.round_type,
-            history
+        # Run the agentic response (may call tools internally)
+        ai_response, tools_used = await run_agent(
+            message=chat_message.message,
+            round_type=chat_message.round_type,
+            history=history
         )
 
+        # Generate TTS
         audio_url = await generate_audio(ai_response)
 
-        # Update MongoDB
-        user_msg = {"type": "user", "content": chat_message.message, "timestamp": datetime.now().isoformat()}
-        bot_msg = {"type": "bot", "content": ai_response, "audio_url": audio_url, "timestamp": datetime.now().isoformat()}
-        
-        # Create a title based on the first message
+        # Persist messages to MongoDB
+        user_msg = {
+            "type": "user",
+            "content": chat_message.message,
+            "timestamp": datetime.now().isoformat()
+        }
+        bot_msg = {
+            "type": "bot",
+            "content": ai_response,
+            "audio_url": audio_url,
+            "tools_used": tools_used,
+            "timestamp": datetime.now().isoformat()
+        }
+
         title = chat_message.message[:30] + "..." if len(chat_message.message) > 30 else chat_message.message
-        
+
         await db.sessions.update_one(
             {"session_id": chat_message.session_id, "round_type": chat_message.round_type},
             {
@@ -368,38 +204,46 @@ async def chat_endpoint(chat_message: ChatMessage):
                     "user_id": chat_message.user_id,
                     "updated_at": datetime.now().isoformat()
                 },
-                "$setOnInsert": {
-                    "title": title
-                }
+                "$setOnInsert": {"title": title}
             },
             upsert=True
         )
 
         return ChatResponse(
             response=ai_response,
-            audio_url=audio_url
+            audio_url=audio_url,
+            tools_used=tools_used
         )
 
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
+# ─────────────────────────────────────────────
+# History / Sessions Endpoints
+# ─────────────────────────────────────────────
+
 @app.get("/history/{session_id}/{round_type}/{user_id}")
 async def get_history(session_id: str, round_type: str, user_id: str):
-    """Fetch conversation history for a session and round"""
+    """Fetch conversation history for a session and round."""
     try:
-        session_doc = await db.sessions.find_one({"session_id": session_id, "round_type": round_type, "user_id": user_id})
+        session_doc = await db.sessions.find_one({
+            "session_id": session_id,
+            "round_type": round_type,
+            "user_id": user_id
+        })
         if session_doc:
-            # We don't return the _id to avoid serialization issues
             return {"messages": session_doc.get("messages", [])}
         return {"messages": []}
     except Exception as e:
         print(f"Error fetching history: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
 @app.post("/clear-history")
 async def clear_history(req: ClearHistoryRequest):
-    """Clear conversation history for a session and round"""
+    """Clear conversation history for a session and round."""
     try:
         await db.sessions.delete_one({"session_id": req.session_id, "round_type": req.round_type})
         return {"status": "success"}
@@ -407,34 +251,116 @@ async def clear_history(req: ClearHistoryRequest):
         print(f"Error clearing history: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
 @app.get("/sessions/{user_id}")
 async def get_sessions(user_id: str):
-    """Fetch all sessions for a user"""
+    """Fetch all sessions for a user."""
     try:
         cursor = db.sessions.find({"user_id": user_id}).sort("updated_at", -1)
         sessions = await cursor.to_list(length=100)
-        
+
         formatted_sessions = []
         for s in sessions:
             formatted_sessions.append({
                 "session_id": s.get("session_id"),
                 "round_type": s.get("round_type"),
                 "title": s.get("title", s.get("round_type", "Interview Session")),
-                "updated_at": s.get("updated_at")
+                "updated_at": s.get("updated_at"),
+                "has_report": bool(s.get("evaluation_report"))
             })
-            
+
         return {"sessions": formatted_sessions}
     except Exception as e:
         print(f"Error fetching sessions: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
 
+
+# ─────────────────────────────────────────────
+# NEW: Finish Interview + Evaluation Report
+# ─────────────────────────────────────────────
+
+async def _generate_and_store_report(session_id: str, round_type: str, user_id: str):
+    """Background task: run the 4-step evaluation pipeline and save to MongoDB."""
+    try:
+        session_doc = await db.sessions.find_one({
+            "session_id": session_id,
+            "round_type": round_type,
+            "user_id": user_id
+        })
+        if not session_doc:
+            print(f"[Evaluation] Session {session_id} not found.")
+            return
+
+        history = session_doc.get("messages", [])
+        report = await run_evaluation_workflow(session_id, round_type, history)
+
+        await db.sessions.update_one(
+            {"session_id": session_id, "round_type": round_type},
+            {"$set": {
+                "evaluation_report": report,
+                "report_generated_at": datetime.now().isoformat()
+            }}
+        )
+        print(f"[Evaluation] Report generated for session {session_id}.")
+    except Exception as e:
+        print(f"[Evaluation] Error generating report: {e}")
+
+
+@app.post("/finish-interview")
+async def finish_interview(req: FinishInterviewRequest, background_tasks: BackgroundTasks):
+    """
+    Trigger the multi-step evaluation workflow for a completed interview.
+    The pipeline runs in the background. Poll /report/{session_id} to get results.
+    """
+    background_tasks.add_task(
+        _generate_and_store_report,
+        req.session_id,
+        req.round_type,
+        req.user_id
+    )
+    return {
+        "status": "processing",
+        "message": "Evaluation pipeline started. Check /report/{session_id}/{round_type} in a few seconds.",
+        "pipeline_steps": ["Transcript Summariser", "Technical Evaluator", "Soft-Skills Evaluator", "Report Generator"]
+    }
+
+
+@app.get("/report/{session_id}/{round_type}")
+async def get_report(session_id: str, round_type: str):
+    """Retrieve the evaluation report for a completed interview session."""
+    try:
+        session_doc = await db.sessions.find_one({
+            "session_id": session_id,
+            "round_type": round_type
+        })
+        if not session_doc:
+            raise HTTPException(status_code=404, detail="Session not found.")
+
+        report = session_doc.get("evaluation_report")
+        if not report:
+            return {"status": "processing", "message": "Evaluation report is not ready yet. Please wait a moment."}
+
+        return {"status": "ready", "report": report}
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"Error fetching report: {e}")
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ─────────────────────────────────────────────
+# Health & Root
+# ─────────────────────────────────────────────
+
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy", "timestamp": datetime.now()}
+    return {"status": "healthy", "version": "2.0.0", "agentic": True, "timestamp": datetime.now()}
+
 
 @app.get("/")
 async def root():
-    return {"message": "AI Interview Platform API", "version": "1.0.0"}
+    return {"message": "AI Interview Platform – Agentic API", "version": "2.0.0"}
+
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8000))
