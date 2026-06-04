@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { Mic, MicOff, Send, Volume2, User, Bot, Clock, Briefcase, Code, Users, Settings, Plus, Sun, Moon, LogOut, Eye, EyeOff } from 'lucide-react';
+import { Mic, MicOff, Send, Volume2, User, Bot, Clock, Briefcase, Code, Users, Settings, Plus, Sun, Moon, LogOut, Eye, EyeOff, Award, FileText, X, CheckCircle, AlertCircle, Search, Terminal, Headphones, PhoneOff } from 'lucide-react';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
 
@@ -213,12 +213,136 @@ const AuthView = ({ onLogin }) => {
   );
 };
 
+// ─── Report Modal ────────────────────────────────────────────────────────────
+const ReportModal = ({ report, onClose }) => {
+  const verdict = report?.verdict || 'N/A';
+  const overall = report?.overall_score ?? 0;
+  const tech = report?.technical_evaluation || {};
+  const soft = report?.soft_skills_evaluation || {};
+
+  const verdictColor = {
+    'Strong Hire': '#10b981',
+    'Hire': '#3b82f6',
+    'Consider': '#f59e0b',
+    'No Hire': '#ef4444'
+  }[verdict] || '#6b7280';
+
+  const ScoreBar = ({ label, score, max = 10, color = '#4f46e5' }) => (
+    <div style={{ marginBottom: '0.75rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.25rem' }}>
+        <span style={{ fontSize: '0.85rem', color: 'var(--text-muted)' }}>{label}</span>
+        <span style={{ fontSize: '0.85rem', fontWeight: '600', color: 'var(--text-main)' }}>{score}/{max}</span>
+      </div>
+      <div style={{ height: '6px', background: 'var(--border)', borderRadius: '99px', overflow: 'hidden' }}>
+        <div style={{ width: `${(score / max) * 100}%`, height: '100%', background: color, borderRadius: '99px', transition: 'width 1s ease' }} />
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.6)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '1rem' }}>
+      <div style={{ background: 'var(--bg-card)', borderRadius: '1.5rem', width: '100%', maxWidth: '640px', maxHeight: '90vh', overflowY: 'auto', padding: '2rem', position: 'relative', boxShadow: '0 25px 50px rgba(0,0,0,0.3)' }}>
+        <button onClick={onClose} style={{ position: 'absolute', top: '1rem', right: '1rem', background: 'var(--border)', border: 'none', borderRadius: '50%', width: '32px', height: '32px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)' }}><X size={16}/></button>
+
+        {/* Header */}
+        <div style={{ textAlign: 'center', marginBottom: '1.5rem' }}>
+          <div style={{ width: '64px', height: '64px', background: verdictColor, borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 1rem' }}>
+            <Award size={32} color="white" />
+          </div>
+          <h2 style={{ fontSize: '1.5rem', fontWeight: 'bold', color: 'var(--text-main)', margin: '0 0 0.25rem' }}>Evaluation Report</h2>
+          <div style={{ display: 'inline-block', background: verdictColor + '22', color: verdictColor, padding: '0.35rem 1rem', borderRadius: '99px', fontWeight: '700', fontSize: '1rem' }}>{verdict}</div>
+        </div>
+
+        {/* Overall Score */}
+        <div style={{ background: 'var(--bg-secondary)', borderRadius: '1rem', padding: '1.25rem', marginBottom: '1.5rem', textAlign: 'center', border: '1px solid var(--border)' }}>
+          <div style={{ fontSize: '3rem', fontWeight: '800', color: verdictColor, lineHeight: 1 }}>{overall}</div>
+          <div style={{ fontSize: '0.875rem', color: 'var(--text-muted)', marginTop: '0.25rem' }}>Overall Score / 10</div>
+        </div>
+
+        {/* Pipeline Steps */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h3 style={{ fontSize: '0.875rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.75rem' }}>Evaluation Pipeline</h3>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {(report?.pipeline_steps || []).map((step, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#10b98122', color: '#10b981', padding: '0.35rem 0.75rem', borderRadius: '99px', fontSize: '0.8rem', fontWeight: '600' }}>
+                <CheckCircle size={12}/> {step}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Technical Scores */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '1rem' }}>Technical Evaluation</h3>
+          <ScoreBar label="Technical Score" score={tech.technical_score ?? 0} color="#4f46e5" />
+          {(tech.technical_strengths || []).length > 0 && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#10b981', marginBottom: '0.35rem' }}>Strengths</div>
+              {tech.technical_strengths.map((s, i) => <div key={i} style={{ fontSize: '0.85rem', color: 'var(--text-muted)', paddingLeft: '0.75rem', borderLeft: '2px solid #10b981', marginBottom: '0.25rem' }}>{s}</div>)}
+            </div>
+          )}
+          {(tech.technical_weaknesses || []).length > 0 && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#f59e0b', marginBottom: '0.35rem' }}>Areas to Improve</div>
+              {tech.technical_weaknesses.map((s, i) => <div key={i} style={{ fontSize: '0.85rem', color: 'var(--text-muted)', paddingLeft: '0.75rem', borderLeft: '2px solid #f59e0b', marginBottom: '0.25rem' }}>{s}</div>)}
+            </div>
+          )}
+          {(tech.factual_errors || []).length > 0 && (
+            <div style={{ marginTop: '0.75rem', background: '#fee2e2', borderRadius: '0.5rem', padding: '0.75rem' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#ef4444', marginBottom: '0.35rem' }}>Factual Errors Detected</div>
+              {tech.factual_errors.map((e, i) => <div key={i} style={{ fontSize: '0.85rem', color: '#991b1b', paddingLeft: '0.5rem' }}>• {e}</div>)}
+            </div>
+          )}
+        </div>
+
+        {/* Soft Skills */}
+        <div style={{ marginBottom: '1.5rem' }}>
+          <h3 style={{ fontSize: '1rem', fontWeight: '700', color: 'var(--text-main)', marginBottom: '1rem' }}>Soft Skills Evaluation</h3>
+          <ScoreBar label="Communication" score={soft.communication_score ?? 0} color="#10b981" />
+          <ScoreBar label="Clarity" score={soft.clarity_score ?? 0} color="#3b82f6" />
+          <ScoreBar label="Confidence" score={soft.confidence_score ?? 0} color="#8b5cf6" />
+          {(soft.soft_skill_strengths || []).length > 0 && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#10b981', marginBottom: '0.35rem' }}>Strengths</div>
+              {soft.soft_skill_strengths.map((s, i) => <div key={i} style={{ fontSize: '0.85rem', color: 'var(--text-muted)', paddingLeft: '0.75rem', borderLeft: '2px solid #10b981', marginBottom: '0.25rem' }}>{s}</div>)}
+            </div>
+          )}
+          {(soft.areas_for_improvement || []).length > 0 && (
+            <div style={{ marginTop: '0.75rem' }}>
+              <div style={{ fontSize: '0.8rem', fontWeight: '600', color: '#f59e0b', marginBottom: '0.35rem' }}>Areas for Improvement</div>
+              {soft.areas_for_improvement.map((s, i) => <div key={i} style={{ fontSize: '0.85rem', color: 'var(--text-muted)', paddingLeft: '0.75rem', borderLeft: '2px solid #f59e0b', marginBottom: '0.25rem' }}>{s}</div>)}
+            </div>
+          )}
+        </div>
+
+        {/* Summary */}
+        {report?.summary && (
+          <div style={{ background: 'var(--bg-secondary)', borderRadius: '0.75rem', padding: '1rem', border: '1px solid var(--border)' }}>
+            <h3 style={{ fontSize: '0.875rem', fontWeight: '700', color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.05em', marginBottom: '0.5rem' }}>Interview Summary</h3>
+            <p style={{ fontSize: '0.875rem', color: 'var(--text-main)', lineHeight: '1.6', margin: 0, whiteSpace: 'pre-wrap' }}>{report.summary}</p>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
 const InterviewApp = () => {
 
   const [currentView, setCurrentView] = useState('home');
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [messages, setMessages] = useState({});
+  const [showReport, setShowReport] = useState(false);
+  const [report, setReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const [finishLoading, setFinishLoading] = useState(false);
+  const [voiceMode, setVoiceMode] = useState(false);
+  const [isAISpeaking, setIsAISpeaking] = useState(false);
+  const pollingRef = useRef(null);
+  const silenceTimerRef = useRef(null);
+  const voiceModeRef = useRef(false); // always-current ref for use inside callbacks
+  const sendMessageRef = useRef(null);
   const [userId, setUserId] = useState(() => localStorage.getItem('chat_user_id'));
   const [userName, setUserName] = useState(() => localStorage.getItem('chat_user_name'));
   const [sessionId, setSessionId] = useState(() => {
@@ -235,6 +359,8 @@ const InterviewApp = () => {
   const [recognition, setRecognition] = useState(null);
   const messagesEndRef = useRef(null);
   const audioRef = useRef(null);
+  const textareaRef = useRef(null);
+  const inputAreaRef = useRef(null);
   useEffect(() => {
     if (isDarkMode) {
       document.documentElement.setAttribute('data-theme', 'dark');
@@ -269,37 +395,60 @@ const InterviewApp = () => {
       recognitionInstance.interimResults = true;
       recognitionInstance.lang = 'en-US';
 
+      // Keep only final results to avoid duplication
       recognitionInstance.onresult = (event) => {
+        if (window.__isSending__) return; // Prevent residual speech from refilling the input
+        
         let finalTranscript = '';
         let interimTranscript = '';
         for (let i = 0; i < event.results.length; i++) {
-          const transcript = event.results[i][0].transcript;
           if (event.results[i].isFinal) {
-            finalTranscript += transcript;
+            finalTranscript += event.results[i][0].transcript;
           } else {
-            interimTranscript += transcript;
+            interimTranscript += event.results[i][0].transcript;
           }
         }
-        setCurrentMessage(finalTranscript + interimTranscript);
+
+        const fullText = finalTranscript + interimTranscript;
+        setCurrentMessage(fullText);
+
+        // In voice mode: reset the silence timer on every speech event
+        if (voiceModeRef.current && fullText.trim()) {
+          clearTimeout(silenceTimerRef.current);
+          silenceTimerRef.current = setTimeout(() => {
+            // Trigger send directly via ref to avoid stale closures and DOM hacks
+            if (sendMessageRef.current) sendMessageRef.current();
+          }, 600); // Super fast 600ms silence detection
+        }
       };
 
       recognitionInstance.onstart = () => setIsRecording(true);
       recognitionInstance.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
         setIsRecording(false);
-        
         if (event.error === 'not-allowed') {
-          alert("Microphone access is blocked! Please click the microphone/lock icon in your browser's address bar and select 'Allow' to use voice typing.");
+          alert("Microphone access is blocked! Please allow it in your browser.");
         } else if (event.error === 'no-speech') {
-          // No speech detected, ignore this warning safely
+          // Silently restart in voice mode
+          if (voiceModeRef.current) {
+            try { recognitionInstance.start(); } catch(e) {}
+          }
         } else if (event.error === 'network') {
-          alert("Speech recognition network error! Please check your internet connection.");
-        } else {
-          alert(`Speech recognition error: ${event.error}. Please try again.`);
+          alert('Speech recognition network error!');
         }
       };
-      recognitionInstance.onend = () => setIsRecording(false);
+      recognitionInstance.onend = () => {
+        setIsRecording(false);
+        // Auto-restart mic in voice mode (unless AI is speaking)
+        if (voiceModeRef.current && !window.__aiSpeaking__) {
+          setTimeout(() => {
+            try { recognitionInstance.start(); } catch(e) {}
+          }, 300);
+        }
+      };
       
+      // Store globally so onended callback can restart mic
+      window.__recognitionInstance__ = recognitionInstance;
       setRecognition(recognitionInstance);
     }
 
@@ -313,6 +462,9 @@ const InterviewApp = () => {
       }
     };
   }, []);
+
+  // Keep voiceModeRef always in sync with voiceMode state
+  useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
 
   const fetchSessionsList = useCallback(async () => {
     try {
@@ -389,11 +541,49 @@ const InterviewApp = () => {
     }
   };
 
+  const exitVoiceMode = () => {
+    voiceModeRef.current = false;
+    setVoiceMode(false);
+    clearTimeout(silenceTimerRef.current);
+    try { recognition && recognition.stop(); } catch(e) {}
+    setIsRecording(false);
+    window.__aiSpeaking__ = false;
+    setIsAISpeaking(false);
+    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+  };
+
+  const toggleVoiceMode = () => {
+    if (voiceMode) {
+      exitVoiceMode();
+    } else {
+      if (!recognition) {
+        alert('Speech recognition is not supported in your browser. Please use Chrome or Edge.');
+        return;
+      }
+      setVoiceMode(true);
+      voiceModeRef.current = true;
+      setCurrentMessage('');
+      try { recognition.start(); } catch(e) {}
+    }
+  };
+
+  // Auto-resize textarea as content grows/shrinks
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = 'auto';
+    ta.style.height = Math.min(ta.scrollHeight, 200) + 'px';
+  }, [currentMessage]);
+
   const sendMessage = async () => {
     if (!currentMessage.trim() || isLoading) return;
     const userMessage = currentMessage.trim();
     const roundMessages = messages[currentView] || [];
 
+    // Stop voice recording before clearing so speech can't re-fill the input
+    if (isRecording) stopRecording();
+
+    window.__isSending__ = true;
     setMessages(prev => ({
       ...prev,
       [currentView]: [...roundMessages, { type: 'user', content: userMessage, timestamp: new Date() }]
@@ -411,17 +601,42 @@ const InterviewApp = () => {
       if (!response.ok) throw new Error('Failed to get response');
       const data = await response.json();
 
+      const newMsgs = [];
+
+      // Show a tool-usage badge if any tools were invoked
+      if (data.tools_used && data.tools_used.length > 0) {
+        newMsgs.push({ type: 'tool_usage', tools: data.tools_used, timestamp: new Date() });
+      }
+
+      newMsgs.push({ type: 'bot', content: data.response, timestamp: new Date(), audioUrl: data.audio_url });
+
       setMessages(prev => ({
         ...prev,
-        [currentView]: [
-          ...(prev[currentView] || []),
-          { type: 'bot', content: data.response, timestamp: new Date(), audioUrl: data.audio_url }
-        ]
+        [currentView]: [...(prev[currentView] || []), ...newMsgs]
       }));
 
       if (data.audio_url && audioRef.current) {
+        window.__aiSpeaking__ = true;
+        setIsAISpeaking(true);
         audioRef.current.src = `${API_BASE_URL}${data.audio_url}`;
         audioRef.current.play().catch(console.error);
+        audioRef.current.onended = () => {
+          window.__aiSpeaking__ = false;
+          setIsAISpeaking(false);
+          // In voice mode: check if AI asked for code input → exit voice mode
+          const codeKeywords = ['type your code', 'switch to chat', 'paste your code', 'code block', 'text mode', 'type it out'];
+          const responseLower = data.response.toLowerCase();
+          const needsCode = codeKeywords.some(k => responseLower.includes(k));
+          if (needsCode) {
+            voiceModeRef.current = false;
+            setVoiceMode(false);
+          } else if (voiceModeRef.current) {
+            // Restart mic after AI finishes speaking
+            setTimeout(() => {
+              try { window.__recognitionInstance__ && window.__recognitionInstance__.start(); } catch(e) {}
+            }, 400);
+          }
+        };
       }
     } catch (error) {
       console.error('Error:', error);
@@ -434,7 +649,56 @@ const InterviewApp = () => {
       }));
     } finally {
       setIsLoading(false);
-      fetchSessionsList(); // Update sidebar with new session title/time
+      window.__isSending__ = false;
+      fetchSessionsList();
+    }
+  };
+
+  // Keep ref up to date so the timeout closure can call the latest function state
+  sendMessageRef.current = sendMessage;
+
+  const finishInterview = async () => {
+    if (finishLoading || reportLoading) return;
+    setFinishLoading(true);
+    setReportLoading(true);
+
+    try {
+      await fetch(`${API_BASE_URL}/finish-interview`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ session_id: sessionId, round_type: currentView, user_id: userId })
+      });
+
+      // Poll for the report
+      let attempts = 0;
+      const poll = async () => {
+        attempts++;
+        try {
+          const res = await fetch(`${API_BASE_URL}/report/${sessionId}/${currentView}`);
+          if (res.ok) {
+            const data = await res.json();
+            if (data.status === 'ready') {
+              setReport(data.report);
+              setShowReport(true);
+              setReportLoading(false);
+              setFinishLoading(false);
+              return;
+            }
+          }
+        } catch (e) { /* ignore */ }
+        if (attempts < 20) {
+          pollingRef.current = setTimeout(poll, 3000);
+        } else {
+          setReportLoading(false);
+          setFinishLoading(false);
+          alert('Report generation timed out. Please try again.');
+        }
+      };
+      poll();
+    } catch (e) {
+      console.error('Error finishing interview:', e);
+      setReportLoading(false);
+      setFinishLoading(false);
     }
   };
 
@@ -621,9 +885,22 @@ const InterviewApp = () => {
                 </h1>
               </div>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '1rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
-              <button onClick={clearHistory} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s' }} onMouseOver={(e) => { e.target.style.background = '#fef2f2'; e.target.style.borderColor = '#fca5a5'; }} onMouseOut={(e) => { e.target.style.background = 'white'; e.target.style.borderColor = 'var(--border-light)'; }}>
-                Reset Session
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.875rem', color: 'var(--text-muted)' }}>
+              {report && (
+                <button onClick={() => setShowReport(true)} style={{ background: 'linear-gradient(135deg, #4f46e5, #7c3aed)', border: 'none', color: 'white', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem' }}>
+                  <Award size={15} /> View Report
+                </button>
+              )}
+              <button
+                onClick={finishInterview}
+                disabled={finishLoading}
+                style={{ background: finishLoading ? '#e5e7eb' : '#10b981', border: 'none', color: 'white', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: finishLoading ? 'not-allowed' : 'pointer', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.85rem', transition: 'all 0.2s' }}
+              >
+                <FileText size={15} />
+                {finishLoading ? (reportLoading ? 'Generating...' : 'Processing...') : 'End & Evaluate'}
+              </button>
+              <button onClick={clearHistory} style={{ background: 'var(--bg-card)', border: '1px solid var(--border-light)', color: '#ef4444', padding: '0.5rem 1rem', borderRadius: '0.5rem', cursor: 'pointer', fontWeight: '500', transition: 'all 0.2s' }} onMouseOver={(e) => { e.target.style.background = '#fef2f2'; e.target.style.borderColor = '#fca5a5'; }} onMouseOut={(e) => { e.target.style.background = 'var(--bg-card)'; e.target.style.borderColor = 'var(--border-light)'; }}>
+                Reset
               </button>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
                 <Clock size={16} />
@@ -632,8 +909,32 @@ const InterviewApp = () => {
             </div>
         </div>
 
-        {/* Chat Area */}
-        <div style={{ position: 'absolute', top: '72px', bottom: '88px', left: 0, right: 0, display: 'flex', flexDirection: 'column', width: '100%', overflow: 'hidden' }}>
+        {/* Voice Mode Overlay */}
+        {voiceMode && (
+          <div style={{ position: 'absolute', top: '72px', bottom: 0, left: 0, right: 0, background: 'var(--bg-primary)', zIndex: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+            <div style={{ position: 'relative', width: '200px', height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem' }}>
+              <div style={{ position: 'absolute', inset: 0, background: isAISpeaking ? 'radial-gradient(circle, rgba(16,185,129,0.4) 0%, rgba(16,185,129,0) 70%)' : 'radial-gradient(circle, rgba(79,70,229,0.4) 0%, rgba(79,70,229,0) 70%)', borderRadius: '50%', animation: 'pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite', transform: isRecording || isAISpeaking || isLoading ? 'scale(1.5)' : 'scale(1)', transition: 'transform 0.3s ease' }}></div>
+              <div style={{ position: 'relative', width: '120px', height: '120px', background: isAISpeaking ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #4f46e5, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: isAISpeaking || isRecording || isLoading ? 'pulse-core 1s ease-in-out infinite alternate' : 'none' }}>
+                {isAISpeaking ? <Bot size={50} color="white" /> : <Mic size={50} color="white" />}
+              </div>
+            </div>
+            
+            <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '3rem' }}>
+              <p style={{ fontSize: '1.25rem', fontWeight: '500', color: 'var(--text-main)', textAlign: 'center', maxWidth: '80%', margin: 0 }}>
+                {isLoading ? "Thinking..." : isAISpeaking ? "AI is speaking..." : isRecording ? "Listening..." : "Waiting for audio..."}
+              </p>
+            </div>
+            
+            <button onClick={exitVoiceMode} style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '99px', padding: '1rem 2rem', fontSize: '1.1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', boxShadow: '0 10px 15px -3px rgba(239, 68, 68, 0.3)', transition: 'transform 0.2s', ':hover': { transform: 'scale(1.05)' } }}>
+              <PhoneOff size={24} />
+              End Conversation
+            </button>
+          </div>
+        )}
+
+        {/* Chat + Input wrapper — flex column so input can grow naturally */}
+        <div style={{ position: 'absolute', top: '72px', bottom: 0, left: 0, right: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          {/* Messages scroll area */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '1.5rem', display: 'flex', flexDirection: 'column', gap: '1.5rem', justifyContent: currentMessages.length === 0 ? 'center' : 'flex-start' }}>
             {currentMessages.length === 0 && (
               <div style={{ textAlign: 'center', padding: '3rem 1rem' }}>
@@ -645,29 +946,50 @@ const InterviewApp = () => {
               </div>
             )}
 
-            {currentMessages.map((message, index) => (
-              <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', flexDirection: message.type === 'user' ? 'row-reverse' : 'row' }}>
-                <div style={{ width: '48px', height: '48px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: message.type === 'user' ? 'var(--msg-user-bg)' : 'var(--msg-bot-icon)', flexShrink: 0, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
-                  {message.type === 'user' ? <User size={24} color="white" /> : <Bot size={24} color="white" />}
-                </div>
-                <div style={{ flex: 1, maxWidth: '650px', textAlign: message.type === 'user' ? 'right' : 'left' }}>
-                  <div style={{ maxWidth: '80%', padding: '1rem 1.25rem', borderRadius: '1.25rem', marginBottom: '0.5rem', ...(message.type === 'user' ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', color: 'white', marginLeft: 'auto', borderBottomRightRadius: '0.25rem', boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.2)' } : { background: 'var(--bg-card)', borderBottomLeftRadius: '0.25rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)' }) }}>
-                    <p style={{ fontSize: '0.875rem', lineHeight: '1.6', margin: 0, color: message.type === 'user' ? 'white' : 'var(--text-main)' }}>
-                      {message.content}
-                    </p>
-                    {message.audioUrl && (
-                      <button onClick={() => playAudio(message.audioUrl)} style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: message.type === 'user' ? '#e0e7ff' : 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem 0' }} onMouseOver={(e) => e.target.style.opacity = '0.8'} onMouseOut={(e) => e.target.style.opacity = '1'}>
-                        <Volume2 size={14} />
-                        <span>Play Audio</span>
-                      </button>
-                    )}
+            {currentMessages.map((message, index) => {
+              // ── Tool-usage indicator bubble ──────────────────────────────
+              if (message.type === 'tool_usage') {
+                const toolIcons = { fact_checker_tool: <Search size={13}/>, code_evaluator_tool: <Terminal size={13}/> };
+                const toolLabels = { fact_checker_tool: '🔍 Fact-checking claim...', code_evaluator_tool: '⚙️ Evaluating code...' };
+                return (
+                  <div key={index} style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', justifyContent: 'center' }}>
+                      {message.tools.map((tool, ti) => (
+                        <div key={ti} style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', background: '#4f46e511', border: '1px solid #4f46e533', color: '#4f46e5', padding: '0.3rem 0.85rem', borderRadius: '99px', fontSize: '0.78rem', fontWeight: '600' }}>
+                          {toolIcons[tool] || <AlertCircle size={13}/>}
+                          {toolLabels[tool] || tool}
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                  <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-light)', textAlign: message.type === 'user' ? 'right' : 'left', padding: '0 0.5rem' }}>
-                    {formatTime(message.timestamp)}
+                );
+              }
+
+              // ── Normal message bubble ────────────────────────────────────
+              return (
+                <div key={index} style={{ display: 'flex', alignItems: 'flex-start', gap: '1rem', flexDirection: message.type === 'user' ? 'row-reverse' : 'row' }}>
+                  <div style={{ width: '48px', height: '48px', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: message.type === 'user' ? 'var(--msg-user-bg)' : 'var(--msg-bot-icon)', flexShrink: 0, boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                    {message.type === 'user' ? <User size={24} color="white" /> : <Bot size={24} color="white" />}
+                  </div>
+                  <div style={{ flex: 1, maxWidth: '650px', textAlign: message.type === 'user' ? 'right' : 'left' }}>
+                    <div style={{ maxWidth: '80%', padding: '1rem 1.25rem', borderRadius: '1.25rem', marginBottom: '0.5rem', ...(message.type === 'user' ? { background: 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', color: 'white', marginLeft: 'auto', borderBottomRightRadius: '0.25rem', boxShadow: '0 4px 6px -1px rgba(79, 70, 229, 0.2)' } : { background: 'var(--bg-card)', borderBottomLeftRadius: '0.25rem', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)' }) }}>
+                      <p style={{ fontSize: '0.875rem', lineHeight: '1.6', margin: 0, color: message.type === 'user' ? 'white' : 'var(--text-main)' }}>
+                        {message.content}
+                      </p>
+                      {message.audioUrl && (
+                        <button onClick={() => playAudio(message.audioUrl)} style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: message.type === 'user' ? '#e0e7ff' : 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem 0' }} onMouseOver={(e) => e.target.style.opacity = '0.8'} onMouseOut={(e) => e.target.style.opacity = '1'}>
+                          <Volume2 size={14} />
+                          <span>Play Audio</span>
+                        </button>
+                      )}
+                    </div>
+                    <div style={{ marginTop: '0.25rem', fontSize: '0.75rem', color: 'var(--text-light)', textAlign: message.type === 'user' ? 'right' : 'left', padding: '0 0.5rem' }}>
+                      {formatTime(message.timestamp)}
+                    </div>
                   </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
 
             {isLoading && (
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: '0.75rem' }}>
@@ -686,32 +1008,60 @@ const InterviewApp = () => {
             
             <div ref={messagesEndRef} />
           </div>
-        </div>
+          {/* ↑ messages scroll area closes here — input area is next sibling inside same flex column */}
 
-        {/* Input Area */}
-        <div style={{ position: 'absolute', bottom: 0, left: 0, right: 0, height: '88px', padding: '1rem 1.5rem', background: 'transparent', zIndex: 10, boxSizing: 'border-box' }}>
+        {/* Input Area — height is natural/auto so it grows with textarea */}
+        <div ref={inputAreaRef} style={{ flexShrink: 0, padding: '0.75rem 1.5rem 1rem', background: 'var(--bg-primary)', borderTop: '1px solid var(--border)' }}>
             <div style={{ maxWidth: '900px', margin: '0 auto', width: '100%', display: 'flex', alignItems: 'end', gap: '0.75rem', background: 'var(--bg-card)', padding: '0.75rem', borderRadius: '2rem', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.05), 0 4px 6px -2px rgba(0, 0, 0, 0.025)', border: '1px solid var(--border-light)', boxSizing: 'border-box' }}>
               <div style={{ flex: 1 }}>
                 <textarea
+                  ref={textareaRef}
                   value={currentMessage}
                   onChange={(e) => setCurrentMessage(e.target.value)}
-                  onKeyPress={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), sendMessage())}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      sendMessage();
+                    }
+                  }}
                   placeholder="Type your message or use voice input..."
-                  style={{ width: '100%', padding: '0.5rem 1rem', border: 'none', resize: 'none', fontSize: '1rem', fontFamily: 'inherit', outline: 'none', background: 'transparent' }}
+                  style={{
+                    width: '100%',
+                    padding: '0.5rem 1rem',
+                    border: 'none',
+                    resize: 'none',
+                    fontSize: '1rem',
+                    fontFamily: 'inherit',
+                    outline: 'none',
+                    background: 'transparent',
+                    color: 'var(--text-main)',
+                    lineHeight: '1.5',
+                    overflow: 'hidden',
+                    minHeight: '38px',
+                    maxHeight: '200px',
+                    display: 'block',
+                    transition: 'height 0.1s ease'
+                  }}
                   rows="1"
                   disabled={isLoading}
                 />
               </div>
               
-              <button onClick={isRecording ? stopRecording : startRecording} style={{ background: isRecording ? '#ef4444' : '#f1f5f9', color: isRecording ? 'white' : '#475569', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', opacity: isRecording ? '0.8' : '1' }} disabled={isLoading}>
-                {isRecording ? <MicOff size={20} /> : <Mic size={20} />}
+              <button onClick={toggleVoiceMode} title="Voice Conversation Mode" style={{ background: voiceMode ? '#10b981' : 'var(--bg-primary)', color: voiceMode ? 'white' : 'var(--text-muted)', border: '1px solid', borderColor: voiceMode ? '#10b981' : 'var(--border-light)', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', flexShrink: 0 }} disabled={isLoading}>
+                <Headphones size={20} />
+              </button>
+
+              <button onClick={isRecording && !voiceMode ? stopRecording : startRecording} style={{ background: isRecording && !voiceMode ? '#ef4444' : '#f1f5f9', color: isRecording && !voiceMode ? 'white' : '#475569', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', opacity: isRecording && !voiceMode ? '0.8' : '1', flexShrink: 0 }} disabled={isLoading || voiceMode}>
+                {isRecording && !voiceMode ? <MicOff size={20} /> : <Mic size={20} />}
               </button>
               
-              <button onClick={sendMessage} style={{ background: !currentMessage.trim() || isLoading ? '#cbd5e1' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', color: 'white', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !currentMessage.trim() || isLoading ? 'not-allowed' : 'pointer', transition: 'all 0.2s', boxShadow: !currentMessage.trim() || isLoading ? 'none' : '0 4px 6px -1px rgba(79, 70, 229, 0.3)' }} disabled={!currentMessage.trim() || isLoading}>
+              <button id="send-btn" onClick={sendMessage} style={{ background: !currentMessage.trim() || isLoading ? '#cbd5e1' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', color: 'white', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !currentMessage.trim() || isLoading ? 'not-allowed' : 'pointer', transition: 'all 0.2s', boxShadow: !currentMessage.trim() || isLoading ? 'none' : '0 4px 6px -1px rgba(79, 70, 229, 0.3)', flexShrink: 0 }} disabled={!currentMessage.trim() || isLoading}>
                 <Send size={20} style={{ marginLeft: '2px' }} />
               </button>
             </div>
           </div>
+          {/* ↑ input area — closes outer flex column wrapper */}
+        </div>
         {/* Hidden audio element for TTS playback */}
         <audio ref={audioRef} />
         
@@ -720,6 +1070,15 @@ const InterviewApp = () => {
           @keyframes bounce {
             0%, 80%, 100% { transform: scale(0); } 
             40% { transform: scale(1); }
+          }
+          @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 0.5; }
+            50% { transform: scale(1.2); opacity: 0.8; }
+            100% { transform: scale(0.8); opacity: 0.5; }
+          }
+          @keyframes pulse-core {
+            0% { transform: scale(0.95); }
+            100% { transform: scale(1.05); }
           }
         `}</style>
       </div>
@@ -738,6 +1097,7 @@ const InterviewApp = () => {
 
   return (
     <>
+      {showReport && report && <ReportModal report={report} onClose={() => setShowReport(false)} />}
       <style>{`
         * { box-sizing: border-box; }
         body { margin: 0; padding: 0; overflow: hidden; background: var(--bg-primary); color: var(--text-main); }
