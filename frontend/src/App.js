@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { useRealtimeVoice } from './useRealtimeVoice';
 import { Mic, MicOff, Send, Volume2, User, Bot, Clock, Briefcase, Code, Users, Settings, Plus, Sun, Moon, LogOut, Eye, EyeOff, Award, FileText, X, CheckCircle, AlertCircle, Search, Terminal, Headphones, PhoneOff } from 'lucide-react';
 
 const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:8000';
@@ -331,17 +332,16 @@ const InterviewApp = () => {
 
   const [currentView, setCurrentView] = useState('home');
   const [isDarkMode, setIsDarkMode] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
+  const [isManualRecording, setIsManualRecording] = useState(false);
   const [messages, setMessages] = useState({});
   const [showReport, setShowReport] = useState(false);
   const [report, setReport] = useState(null);
   const [reportLoading, setReportLoading] = useState(false);
   const [finishLoading, setFinishLoading] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
-  const [isAISpeaking, setIsAISpeaking] = useState(false);
-  const pollingRef = useRef(null);
+  const voiceModeRef = useRef(false); // kept for legacy sendMessage compatibility
   const silenceTimerRef = useRef(null);
-  const voiceModeRef = useRef(false); // always-current ref for use inside callbacks
+  const pollingRef = useRef(null);     // for report polling
   const sendMessageRef = useRef(null);
   const [userId, setUserId] = useState(() => localStorage.getItem('chat_user_id'));
   const [userName, setUserName] = useState(() => localStorage.getItem('chat_user_name'));
@@ -422,10 +422,10 @@ const InterviewApp = () => {
         }
       };
 
-      recognitionInstance.onstart = () => setIsRecording(true);
+      recognitionInstance.onstart = () => setIsManualRecording(true);
       recognitionInstance.onerror = (event) => {
         console.error('Speech recognition error:', event.error);
-        setIsRecording(false);
+        setIsManualRecording(false);
         if (event.error === 'not-allowed') {
           alert("Microphone access is blocked! Please allow it in your browser.");
         } else if (event.error === 'no-speech') {
@@ -438,7 +438,7 @@ const InterviewApp = () => {
         }
       };
       recognitionInstance.onend = () => {
-        setIsRecording(false);
+        setIsManualRecording(false);
         // Auto-restart mic in voice mode (unless AI is speaking)
         if (voiceModeRef.current && !window.__aiSpeaking__) {
           setTimeout(() => {
@@ -466,6 +466,36 @@ const InterviewApp = () => {
   // Keep voiceModeRef always in sync with voiceMode state
   useEffect(() => { voiceModeRef.current = voiceMode; }, [voiceMode]);
 
+  // ── Real-time voice pipeline (AudioWorklet → WebSocket → VAD → Groq Whisper → LLM → TTS) ──
+  const {
+    isConnected: rtIsConnected,
+    isRecording,
+    isAISpeaking,
+    liveTranscript,
+    aiTranscript,
+    startVoiceSession,
+    stopVoiceSession,
+  } = useRealtimeVoice({
+    sessionId,
+    roundType: currentView,
+    userId,
+    onUserMessage: (text) => {
+      // Show user's transcribed message in chat
+      setMessages(prev => ({
+        ...prev,
+        [currentView]: [...(prev[currentView] || []), { type: 'user', content: text, timestamp: new Date() }]
+      }));
+    },
+    onBotMessage: (text) => {
+      // Show completed AI response in chat
+      setMessages(prev => ({
+        ...prev,
+        [currentView]: [...(prev[currentView] || []), { type: 'bot', content: text, timestamp: new Date() }]
+      }));
+      fetchSessionsList();
+    },
+  });
+
   const fetchSessionsList = useCallback(async () => {
     try {
       if (!userId) return;
@@ -485,13 +515,13 @@ const InterviewApp = () => {
 
   // Stop recording when view changes (e.g., navigating back to home or another round)
   useEffect(() => {
-    if (isRecording && recognition) {
+    if (isManualRecording && recognition) {
       try {
         recognition.stop();
       } catch (e) {
         console.error('Error stopping speech recognition on view change:', e);
       }
-      setIsRecording(false);
+      setIsManualRecording(false);
     }
 
     if (currentView !== 'home') {
@@ -509,7 +539,7 @@ const InterviewApp = () => {
       };
       fetchHistory();
     }
-  }, [currentView, recognition, sessionId, isRecording, userId]);
+  }, [currentView, recognition, sessionId, isManualRecording, userId]);
 
   useEffect(() => {
     if (messagesEndRef.current && messagesEndRef.current.parentElement) {
@@ -525,7 +555,7 @@ const InterviewApp = () => {
     }
     try {
       recognition.start();
-      setIsRecording(true);
+      setIsManualRecording(true);
     } catch (e) {
       console.error('Speech recognition start error:', e);
     }
@@ -535,7 +565,7 @@ const InterviewApp = () => {
     if (!recognition) return;
     try {
       recognition.stop();
-      setIsRecording(false);
+      setIsManualRecording(false);
     } catch (e) {
       console.error('Speech recognition stop error:', e);
     }
@@ -553,7 +583,7 @@ const InterviewApp = () => {
     const cleanText = text
       .replace(/```[\s\S]*?```/g, '[code block omitted]')
       .replace(/`([^`]+)`/g, '$1')
-      .replace(/[*_#\-]/g, '');
+      .replace(/[*_#-]/g, '');
 
     const utterance = new SpeechSynthesisUtterance(cleanText);
     const voices = window.speechSynthesis.getVoices();
@@ -584,29 +614,23 @@ const InterviewApp = () => {
   const exitVoiceMode = () => {
     voiceModeRef.current = false;
     setVoiceMode(false);
-    clearTimeout(silenceTimerRef.current);
-    try { recognition && recognition.stop(); } catch(e) {}
-    setIsRecording(false);
-    window.__aiSpeaking__ = false;
-    setIsAISpeaking(false);
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-    }
-    if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
+    stopVoiceSession();
   };
 
-  const toggleVoiceMode = () => {
+  const toggleVoiceMode = async () => {
     if (voiceMode) {
       exitVoiceMode();
     } else {
-      if (!recognition) {
-        alert('Speech recognition is not supported in your browser. Please use Chrome or Edge.');
-        return;
-      }
       setVoiceMode(true);
       voiceModeRef.current = true;
       setCurrentMessage('');
-      try { recognition.start(); } catch(e) {}
+      try {
+        await startVoiceSession();
+      } catch (e) {
+        console.error('[Voice] Failed to start session:', e);
+        alert('Could not start voice session. Check microphone permissions.');
+        exitVoiceMode();
+      }
     }
   };
 
@@ -624,7 +648,7 @@ const InterviewApp = () => {
     const roundMessages = messages[currentView] || [];
 
     // Stop voice recording before clearing so speech can't re-fill the input
-    if (isRecording) stopRecording();
+    if (isManualRecording) stopRecording();
 
     // Interrupt any ongoing AI speech synthesis when the user submits their response
     if (window.speechSynthesis) {
@@ -663,34 +687,8 @@ const InterviewApp = () => {
         [currentView]: [...(prev[currentView] || []), ...newMsgs]
       }));
 
-      if (voiceModeRef.current) {
-        window.__aiSpeaking__ = true;
-        setIsAISpeaking(true);
-        speakText(
-          data.response,
-          () => {
-            window.__aiSpeaking__ = true;
-            setIsAISpeaking(true);
-          },
-          () => {
-            window.__aiSpeaking__ = false;
-            setIsAISpeaking(false);
-            // In voice mode: check if AI asked for code input → exit voice mode
-            const codeKeywords = ['type your code', 'switch to chat', 'paste your code', 'code block', 'text mode', 'type it out'];
-            const responseLower = data.response.toLowerCase();
-            const needsCode = codeKeywords.some(k => responseLower.includes(k));
-            if (needsCode) {
-              voiceModeRef.current = false;
-              setVoiceMode(false);
-            } else if (voiceModeRef.current) {
-              // Restart mic after AI finishes speaking
-              setTimeout(() => {
-                try { window.__recognitionInstance__ && window.__recognitionInstance__.start(); } catch(e) {}
-              }, 400);
-            }
-          }
-        );
-      }
+      // Note: in voice mode, AI speaking state is managed by the WebSocket pipeline (useRealtimeVoice)
+      // The text chat sendMessage does not trigger TTS in voice mode
     } catch (error) {
       console.error('Error:', error);
       setMessages(prev => ({
@@ -704,6 +702,7 @@ const InterviewApp = () => {
       setIsLoading(false);
       window.__isSending__ = false;
       fetchSessionsList();
+      setTimeout(() => fetchSessionsList(), 2500);
     }
   };
 
@@ -772,14 +771,8 @@ const InterviewApp = () => {
   const playAudio = (text) => {
     speakText(
       text,
-      () => {
-        window.__aiSpeaking__ = true;
-        setIsAISpeaking(true);
-      },
-      () => {
-        window.__aiSpeaking__ = false;
-        setIsAISpeaking(false);
-      }
+      () => { window.__aiSpeaking__ = true; },
+      () => { window.__aiSpeaking__ = false; }
     );
   };
 
@@ -859,7 +852,7 @@ const InterviewApp = () => {
             onMouseOver={(e) => { if (sessionId !== session.session_id || currentView === 'home') e.currentTarget.style.background = 'var(--bg-sidebar-hover)'; }}
             onMouseOut={(e) => { if (sessionId !== session.session_id || currentView === 'home') e.currentTarget.style.background = 'transparent'; }}
           >
-            <div style={{ fontWeight: '500', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: (sessionId === session.session_id && currentView !== 'home') ? 'white' : '#9ca3af' }}>
+            <div title={session.title} style={{ fontWeight: '500', fontSize: '0.8rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', color: (sessionId === session.session_id && currentView !== 'home') ? 'white' : '#9ca3af' }}>
               {session.title}
             </div>
             <div style={{ fontSize: '0.7rem', color: '#6b7280', display: 'flex', justifyContent: 'space-between' }}>
@@ -924,7 +917,7 @@ const InterviewApp = () => {
     }
 
     // Interview chat view
-    const activeSession = sessionsList.find(s => s.session_id === currentView);
+    const activeSession = sessionsList.find(s => s.session_id === sessionId);
     const roundType = activeSession ? activeSession.round_type : currentView;
     const currentType = interviewTypes.find(type => type.id === roundType) || interviewTypes[0];
     const displayTitle = activeSession ? activeSession.title : currentType.title;
@@ -969,57 +962,59 @@ const InterviewApp = () => {
             </div>
         </div>
 
-        {/* Voice Mode Overlay */}
+        {/* Voice Mode Overlay – Real-Time WebSocket Pipeline */}
         {voiceMode && (
-          <div 
-            onClick={() => {
-              if (isAISpeaking) {
-                // Cancel active speech synthesis immediately (Interruption)
-                if (window.speechSynthesis) {
-                  window.speechSynthesis.cancel();
-                }
-                window.__aiSpeaking__ = false;
-                setIsAISpeaking(false);
-                // Restart mic immediately
-                setTimeout(() => {
-                  try { window.__recognitionInstance__ && window.__recognitionInstance__.start(); } catch(e) {}
-                }, 100);
-              }
-            }}
-            style={{ 
-              position: 'absolute', 
-              top: '72px', 
-              bottom: 0, 
-              left: 0, 
-              right: 0, 
-              background: 'var(--bg-primary)', 
-              zIndex: 40, 
-              display: 'flex', 
-              flexDirection: 'column', 
-              alignItems: 'center', 
+          <div
+            style={{
+              position: 'absolute',
+              top: '72px',
+              bottom: 0,
+              left: 0,
+              right: 0,
+              background: 'var(--bg-primary)',
+              zIndex: 40,
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
               justifyContent: 'center',
-              cursor: isAISpeaking ? 'pointer' : 'default'
             }}
           >
+            {/* Animated orb */}
             <div style={{ position: 'relative', width: '200px', height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem' }}>
-              <div style={{ position: 'absolute', inset: 0, background: isAISpeaking ? 'radial-gradient(circle, rgba(16,185,129,0.4) 0%, rgba(16,185,129,0) 70%)' : 'radial-gradient(circle, rgba(79,70,229,0.4) 0%, rgba(79,70,229,0) 70%)', borderRadius: '50%', animation: 'pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite', transform: isRecording || isAISpeaking || isLoading ? 'scale(1.5)' : 'scale(1)', transition: 'transform 0.3s ease' }}></div>
-              <div style={{ position: 'relative', width: '120px', height: '120px', background: isAISpeaking ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #4f46e5, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: isAISpeaking || isRecording || isLoading ? 'pulse-core 1s ease-in-out infinite alternate' : 'none' }}>
+              <div style={{ position: 'absolute', inset: 0, background: isAISpeaking ? 'radial-gradient(circle, rgba(16,185,129,0.4) 0%, rgba(16,185,129,0) 70%)' : 'radial-gradient(circle, rgba(79,70,229,0.4) 0%, rgba(79,70,229,0) 70%)', borderRadius: '50%', animation: 'pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite', transform: isRecording || isAISpeaking ? 'scale(1.5)' : 'scale(1)', transition: 'transform 0.3s ease' }}></div>
+              <div style={{ position: 'relative', width: '120px', height: '120px', background: isAISpeaking ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #4f46e5, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: isAISpeaking || isRecording ? 'pulse-core 1s ease-in-out infinite alternate' : 'none' }}>
                 {isAISpeaking ? <Bot size={50} color="white" /> : <Mic size={50} color="white" />}
               </div>
             </div>
-            
-            <div style={{ height: '60px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: '3rem', gap: '0.25rem' }}>
-              <p style={{ fontSize: '1.25rem', fontWeight: '500', color: 'var(--text-main)', textAlign: 'center', maxWidth: '80%', margin: 0 }}>
-                {isLoading ? "Thinking..." : isAISpeaking ? "AI is speaking..." : isRecording ? "Listening..." : "Waiting for audio..."}
+
+            {/* Status text + live transcripts */}
+            <div style={{ height: 'auto', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem', gap: '0.5rem', maxWidth: '70%' }}>
+              <p style={{ fontSize: '1.25rem', fontWeight: '500', color: 'var(--text-main)', textAlign: 'center', margin: 0 }}>
+                {isAISpeaking ? 'AI is speaking...' : isRecording ? 'Listening...' : rtIsConnected ? 'Waiting for speech...' : 'Connecting...'}
               </p>
-              {isAISpeaking && (
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', margin: 0 }}>
-                  (Click anywhere on screen to interrupt)
+
+              {/* Live user speech transcript from VAD+STT */}
+              {isRecording && liveTranscript && (
+                <p style={{ fontSize: '0.9rem', color: '#6366f1', fontStyle: 'italic', textAlign: 'center', margin: 0, maxWidth: '100%' }}>
+                  "{liveTranscript}"
                 </p>
               )}
+
+              {/* Streaming AI response tokens */}
+              {isAISpeaking && aiTranscript && (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', margin: 0, maxWidth: '100%', lineHeight: 1.5 }}>
+                  {aiTranscript.slice(-120)}{aiTranscript.length > 120 ? '...' : ''}
+                </p>
+              )}
+
+              {/* Connection status indicator */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: '0.25rem' }}>
+                <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: rtIsConnected ? '#10b981' : '#f59e0b', animation: rtIsConnected ? 'none' : 'pulse-core 1s ease-in-out infinite alternate' }}></div>
+                <span style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>{rtIsConnected ? 'Connected' : 'Connecting...'}</span>
+              </div>
             </div>
-            
-            <button onClick={(e) => { e.stopPropagation(); exitVoiceMode(); }} style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '99px', padding: '1rem 2rem', fontSize: '1.1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', boxShadow: '0 10px 15px -3px rgba(239, 68, 68, 0.3)', transition: 'transform 0.2s', ':hover': { transform: 'scale(1.05)' } }}>
+
+            <button onClick={(e) => { e.stopPropagation(); exitVoiceMode(); }} style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '99px', padding: '1rem 2rem', fontSize: '1.1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', boxShadow: '0 10px 15px -3px rgba(239, 68, 68, 0.3)', transition: 'transform 0.2s' }}>
               <PhoneOff size={24} />
               End Conversation
             </button>
@@ -1145,8 +1140,8 @@ const InterviewApp = () => {
                 <Headphones size={20} />
               </button>
 
-              <button onClick={isRecording && !voiceMode ? stopRecording : startRecording} style={{ background: isRecording && !voiceMode ? '#ef4444' : '#f1f5f9', color: isRecording && !voiceMode ? 'white' : '#475569', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', opacity: isRecording && !voiceMode ? '0.8' : '1', flexShrink: 0 }} disabled={isLoading || voiceMode}>
-                {isRecording && !voiceMode ? <MicOff size={20} /> : <Mic size={20} />}
+              <button onClick={isManualRecording && !voiceMode ? stopRecording : startRecording} style={{ background: isManualRecording && !voiceMode ? '#ef4444' : '#f1f5f9', color: isManualRecording && !voiceMode ? 'white' : '#475569', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', transition: 'all 0.2s', opacity: isManualRecording && !voiceMode ? '0.8' : '1', flexShrink: 0 }} disabled={isLoading || voiceMode}>
+                {isManualRecording && !voiceMode ? <MicOff size={20} /> : <Mic size={20} />}
               </button>
               
               <button id="send-btn" onClick={sendMessage} style={{ background: !currentMessage.trim() || isLoading ? '#cbd5e1' : 'linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)', color: 'white', border: 'none', borderRadius: '50%', width: '48px', height: '48px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: !currentMessage.trim() || isLoading ? 'not-allowed' : 'pointer', transition: 'all 0.2s', boxShadow: !currentMessage.trim() || isLoading ? 'none' : '0 4px 6px -1px rgba(79, 70, 229, 0.3)', flexShrink: 0 }} disabled={!currentMessage.trim() || isLoading}>
