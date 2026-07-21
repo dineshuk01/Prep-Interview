@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, BackgroundTasks
+from fastapi import FastAPI, HTTPException, BackgroundTasks, WebSocket, WebSocketDisconnect
 from dotenv import load_dotenv
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,10 +15,11 @@ import uvicorn
 from motor.motor_asyncio import AsyncIOMotorClient
 import certifi
 
-from agent import run_agent, run_evaluation_workflow
+from agent import run_agent, run_evaluation_workflow, generate_session_title
+from voice_pipeline import VADManager, STTService, SentenceChunker, TTSService
 
 # Load env variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Initialize OpenAI client (still used for TTS)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -26,18 +27,30 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Initialize MongoDB
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB_NAME = os.getenv("MONGO_DB", "ai_interview_platform")
-mongo_client = AsyncIOMotorClient(MONGO_URI, tlsCAFile=certifi.where())
-db = mongo_client[MONGO_DB_NAME]
+
+try:
+    kwargs = {}
+    if "mongodb+srv://" in MONGO_URI or "tls=true" in MONGO_URI.lower() or "ssl=true" in MONGO_URI.lower():
+        kwargs["tlsCAFile"] = certifi.where()
+    mongo_client = AsyncIOMotorClient(MONGO_URI, **kwargs)
+    db = mongo_client[MONGO_DB_NAME]
+except Exception as e:
+    print(f"Warning: Failed to initialize MongoDB with MONGO_URI ({e})")
+    print("Falling back to local MongoDB: mongodb://localhost:27017")
+    MONGO_URI = "mongodb://localhost:27017"
+    mongo_client = AsyncIOMotorClient(MONGO_URI)
+    db = mongo_client[MONGO_DB_NAME]
+
+
 
 # Initialize FastAPI app
 app = FastAPI(title="AI Interview Platform – Agentic", version="2.0.0")
 
 # Enable CORS
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -129,30 +142,37 @@ async def login(user: UserLogin):
 
 async def generate_audio(text: str) -> Optional[str]:
     """Generate audio using OpenAI TTS and cache it."""
+    # Option C: Disable backend TTS generation completely to save API cost and latency.
+    return None
+
+
+async def _update_smart_title_if_needed(session_id: str, round_type: str, user_text: str, ai_response: str):
+    """Generates and updates a smart session title if title is missing, default, or raw top snippet."""
     try:
-        text_hash = hashlib.md5(text.encode()).hexdigest()
-        audio_filename = f"audio_{text_hash}.mp3"
-        audio_path = f"static/audio/{audio_filename}"
+        session_doc = await db.sessions.find_one({"session_id": session_id, "round_type": round_type})
+        if not session_doc:
+            return
 
-        if os.path.exists(audio_path):
-            return f"/static/audio/{audio_filename}"
+        current_title = session_doc.get("title", "")
+        messages = session_doc.get("messages", [])
 
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: client.audio.speech.create(
-                model="tts-1",
-                voice="alloy",
-                input=text[:4096]   # TTS limit
-            )
+        # Check if title needs smart generation (missing, default round name, or raw truncated user text)
+        is_raw_text = (
+            not current_title or
+            current_title == user_text[:30] + "..." or
+            current_title == user_text[:30] or
+            current_title in ["Technical Round", "HR Round", "System Design Round", "Case Study Round", "Interview Session"]
         )
 
-        with open(audio_path, "wb") as f:
-            f.write(response.read())
-
-        return f"/static/audio/{audio_filename}"
+        if is_raw_text or len(messages) <= 4:
+            smart_title = await generate_session_title(user_text, ai_response, round_type)
+            if smart_title:
+                await db.sessions.update_one(
+                    {"session_id": session_id, "round_type": round_type},
+                    {"$set": {"title": smart_title}}
+                )
     except Exception as e:
-        print(f"Error generating audio: {e}")
-        return None
+        print(f"[Smart Title] Error updating title: {e}")
 
 
 # ─────────────────────────────────────────────
@@ -209,6 +229,14 @@ async def chat_endpoint(chat_message: ChatMessage):
             upsert=True
         )
 
+        # Asynchronously generate & set smart meaningful title
+        asyncio.create_task(_update_smart_title_if_needed(
+            chat_message.session_id,
+            chat_message.round_type,
+            chat_message.message,
+            ai_response
+        ))
+
         return ChatResponse(
             response=ai_response,
             audio_url=audio_url,
@@ -217,6 +245,12 @@ async def chat_endpoint(chat_message: ChatMessage):
 
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
+        err_msg = str(e)
+        if "insufficient_quota" in err_msg or "429" in err_msg:
+            raise HTTPException(
+                status_code=429,
+                detail="OpenAI API key quota exceeded. Please check your OpenAI plan & billing at platform.openai.com or update OPENAI_API_KEY in backend/.env."
+            )
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -346,6 +380,172 @@ async def get_report(session_id: str, round_type: str):
     except Exception as e:
         print(f"Error fetching report: {e}")
         raise HTTPException(status_code=500, detail="Internal server error")
+
+
+# ─────────────────────────────────────────────
+# Real-Time Voice WebSocket Endpoint
+# ─────────────────────────────────────────────
+
+import json as _json
+import base64 as _base64
+
+@app.websocket("/ws/audio/{session_id}/{round_type}/{user_id}")
+async def voice_audio_ws(
+    websocket: WebSocket,
+    session_id: str,
+    round_type: str,
+    user_id: str
+):
+    """
+    Full-duplex voice pipeline:
+    Client -> 20ms Int16 PCM frames (binary)
+    Server -> JSON control signals + base64 MP3 audio chunks
+
+    Protocol (server -> client JSON messages):
+      {"type": "vad", "event": "speech_start" | "speech_end" | "silence"}
+      {"type": "transcript", "text": str}              <- after STT
+      {"type": "token", "text": str}                   <- streaming LLM token
+      {"type": "audio", "data": <base64 mp3>}          <- TTS chunk
+      {"type": "audio_end"}                            <- TTS turn complete
+      {"type": "barge_in"}                             <- user interrupted AI
+      {"type": "error", "detail": str}
+    """
+    await websocket.accept()
+    print(f"[WS] Connected: session={session_id} round={round_type} user={user_id}")
+
+    vad = VADManager()
+    stt = STTService()
+    tts = TTSService()
+    chunker = SentenceChunker()
+
+    # Track currently running LLM+TTS task so we can cancel on barge-in
+    active_response_task: asyncio.Task | None = None
+
+    async def _send(msg: dict):
+        try:
+            await websocket.send_text(_json.dumps(msg))
+        except Exception:
+            pass
+
+    async def _run_response_pipeline(user_text: str):
+        """LLM streaming -> sentence chunker -> TTS streaming."""
+        nonlocal chunker
+        chunker = SentenceChunker()  # fresh chunker per turn
+
+        # Fetch history from MongoDB
+        try:
+            session_doc = await db.sessions.find_one({
+                "session_id": session_id,
+                "round_type": round_type
+            })
+            history = session_doc.get("messages", []) if session_doc else []
+        except Exception:
+            history = []
+
+        # Build Groq streaming call via the agent module's LLM
+        from agent import _get_llm, INTERVIEW_PROMPTS, _build_messages
+        llm = _get_llm(temperature=0.7)
+        messages = _build_messages(round_type, user_text, history)
+
+        full_response = ""
+        try:
+            async for chunk in llm.astream(messages):
+                token = chunk.content if hasattr(chunk, 'content') else str(chunk)
+                if not token:
+                    continue
+                full_response += token
+                await _send({"type": "token", "text": token})
+
+                # Feed to sentence chunker
+                ready_sentences = chunker.feed(token)
+                for sentence in ready_sentences:
+                    audio_bytes = await tts.synthesize(sentence)
+                    if audio_bytes:
+                        encoded = _base64.b64encode(audio_bytes).decode()
+                        await _send({"type": "audio", "data": encoded})
+
+            # Flush remaining partial sentence
+            for sentence in chunker.flush():
+                audio_bytes = await tts.synthesize(sentence)
+                if audio_bytes:
+                    encoded = _base64.b64encode(audio_bytes).decode()
+                    await _send({"type": "audio", "data": encoded})
+
+            await _send({"type": "audio_end"})
+
+        except asyncio.CancelledError:
+            # Barge-in: LLM generation was cancelled by user speech
+            await _send({"type": "audio_end"})
+            raise
+        except Exception as e:
+            print(f"[WS] LLM/TTS error: {e}")
+            await _send({"type": "error", "detail": str(e)})
+            return
+
+        # Persist to MongoDB
+        try:
+            user_msg = {"type": "user", "content": user_text, "timestamp": datetime.now().isoformat()}
+            bot_msg = {"type": "bot", "content": full_response, "tools_used": [], "timestamp": datetime.now().isoformat()}
+            title = user_text[:30] + "..." if len(user_text) > 30 else user_text
+            await db.sessions.update_one(
+                {"session_id": session_id, "round_type": round_type},
+                {
+                    "$push": {"messages": {"$each": [user_msg, bot_msg]}},
+                    "$set": {"user_id": user_id, "updated_at": datetime.now().isoformat()},
+                    "$setOnInsert": {"title": title}
+                },
+                upsert=True
+            )
+            asyncio.create_task(_update_smart_title_if_needed(
+                session_id,
+                round_type,
+                user_text,
+                full_response
+            ))
+        except Exception as e:
+            print(f"[WS] MongoDB persist error: {e}")
+
+    try:
+        while True:
+            # Receive binary PCM frame from AudioWorklet
+            data = await websocket.receive_bytes()
+
+            # Process frame through VAD
+            vad_result = vad.process_frame(data)
+            event_type = vad_result["type"]
+
+            if event_type == "speech_start":
+                # User started speaking — cancel any active AI response (barge-in)
+                if active_response_task and not active_response_task.done():
+                    active_response_task.cancel()
+                    active_response_task = None
+                    vad.reset()
+                    await _send({"type": "barge_in"})
+                await _send({"type": "vad", "event": "speech_start"})
+
+            elif event_type == "speech_end":
+                await _send({"type": "vad", "event": "speech_end"})
+                audio_bytes = vad_result.get("audio", b"")
+
+                # Run STT
+                transcript = await stt.transcribe(audio_bytes)
+                if not transcript:
+                    continue
+
+                await _send({"type": "transcript", "text": transcript})
+
+                # Launch LLM + TTS pipeline as a cancellable background task
+                active_response_task = asyncio.create_task(
+                    _run_response_pipeline(transcript)
+                )
+
+    except WebSocketDisconnect:
+        print(f"[WS] Disconnected: session={session_id}")
+        if active_response_task and not active_response_task.done():
+            active_response_task.cancel()
+    except Exception as e:
+        print(f"[WS] Unexpected error: {e}")
+        await _send({"type": "error", "detail": str(e)})
 
 
 # ─────────────────────────────────────────────
