@@ -10,6 +10,7 @@ import asyncio
 import json
 from typing import List, Dict, Any
 
+import os
 from langchain_openai import ChatOpenAI
 from langchain.agents import AgentExecutor, create_openai_tools_agent
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
@@ -23,7 +24,24 @@ from tools import AGENT_TOOLS
 # ─────────────────────────────────────────────
 
 def _get_llm(temperature: float = 0.7) -> ChatOpenAI:
+    """
+    Returns an LLM instance.
+    If GROQ_API_KEY is present in environment, connects to Groq API (free & ultra-fast).
+    Otherwise falls back to OpenAI API key.
+    """
+    groq_api_key = os.getenv("GROQ_API_KEY")
+    if groq_api_key and groq_api_key.strip() and groq_api_key != "your_groq_api_key_here":
+        model_name = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+        return ChatOpenAI(
+            model=model_name,
+            api_key=groq_api_key,
+            base_url="https://api.groq.com/openai/v1",
+            temperature=temperature
+        )
+
     return ChatOpenAI(model="gpt-4o-mini", temperature=temperature)
+
+
 
 
 # ─────────────────────────────────────────────

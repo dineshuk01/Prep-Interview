@@ -541,6 +541,46 @@ const InterviewApp = () => {
     }
   };
 
+  const speakText = (text, onStart, onEnd) => {
+    if (!window.speechSynthesis) {
+      console.error('Speech synthesis is not supported in this browser.');
+      if (onEnd) onEnd();
+      return;
+    }
+    window.speechSynthesis.cancel(); // Cancel any ongoing speech
+    
+    // Clean text of markdown or code elements for cleaner speaking
+    const cleanText = text
+      .replace(/```[\s\S]*?```/g, '[code block omitted]')
+      .replace(/`([^`]+)`/g, '$1')
+      .replace(/[*_#\-]/g, '');
+
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    const voices = window.speechSynthesis.getVoices();
+    // Prefer high quality English voices if available
+    const preferredVoice = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural') || v.name.includes('David') || v.name.includes('Zira'))) || voices.find(v => v.lang.startsWith('en')) || voices[0];
+    if (preferredVoice) {
+      utterance.voice = preferredVoice;
+    }
+    utterance.rate = 1.05; // Slightly faster for responsiveness
+    utterance.pitch = 1.0;
+    
+    utterance.onstart = () => {
+      if (onStart) onStart();
+    };
+    
+    utterance.onend = () => {
+      if (onEnd) onEnd();
+    };
+    
+    utterance.onerror = (e) => {
+      console.error('Speech synthesis error:', e);
+      if (onEnd) onEnd();
+    };
+    
+    window.speechSynthesis.speak(utterance);
+  };
+
   const exitVoiceMode = () => {
     voiceModeRef.current = false;
     setVoiceMode(false);
@@ -549,6 +589,9 @@ const InterviewApp = () => {
     setIsRecording(false);
     window.__aiSpeaking__ = false;
     setIsAISpeaking(false);
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
     if (audioRef.current) { audioRef.current.pause(); audioRef.current.src = ''; }
   };
 
@@ -583,6 +626,11 @@ const InterviewApp = () => {
     // Stop voice recording before clearing so speech can't re-fill the input
     if (isRecording) stopRecording();
 
+    // Interrupt any ongoing AI speech synthesis when the user submits their response
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+    }
+
     window.__isSending__ = true;
     setMessages(prev => ({
       ...prev,
@@ -615,28 +663,33 @@ const InterviewApp = () => {
         [currentView]: [...(prev[currentView] || []), ...newMsgs]
       }));
 
-      if (data.audio_url && audioRef.current) {
+      if (voiceModeRef.current) {
         window.__aiSpeaking__ = true;
         setIsAISpeaking(true);
-        audioRef.current.src = `${API_BASE_URL}${data.audio_url}`;
-        audioRef.current.play().catch(console.error);
-        audioRef.current.onended = () => {
-          window.__aiSpeaking__ = false;
-          setIsAISpeaking(false);
-          // In voice mode: check if AI asked for code input → exit voice mode
-          const codeKeywords = ['type your code', 'switch to chat', 'paste your code', 'code block', 'text mode', 'type it out'];
-          const responseLower = data.response.toLowerCase();
-          const needsCode = codeKeywords.some(k => responseLower.includes(k));
-          if (needsCode) {
-            voiceModeRef.current = false;
-            setVoiceMode(false);
-          } else if (voiceModeRef.current) {
-            // Restart mic after AI finishes speaking
-            setTimeout(() => {
-              try { window.__recognitionInstance__ && window.__recognitionInstance__.start(); } catch(e) {}
-            }, 400);
+        speakText(
+          data.response,
+          () => {
+            window.__aiSpeaking__ = true;
+            setIsAISpeaking(true);
+          },
+          () => {
+            window.__aiSpeaking__ = false;
+            setIsAISpeaking(false);
+            // In voice mode: check if AI asked for code input → exit voice mode
+            const codeKeywords = ['type your code', 'switch to chat', 'paste your code', 'code block', 'text mode', 'type it out'];
+            const responseLower = data.response.toLowerCase();
+            const needsCode = codeKeywords.some(k => responseLower.includes(k));
+            if (needsCode) {
+              voiceModeRef.current = false;
+              setVoiceMode(false);
+            } else if (voiceModeRef.current) {
+              // Restart mic after AI finishes speaking
+              setTimeout(() => {
+                try { window.__recognitionInstance__ && window.__recognitionInstance__.start(); } catch(e) {}
+              }, 400);
+            }
           }
-        };
+        );
       }
     } catch (error) {
       console.error('Error:', error);
@@ -716,11 +769,18 @@ const InterviewApp = () => {
     }
   };
 
-  const playAudio = (audioUrl) => {
-    if (audioRef.current) {
-      audioRef.current.src = `${API_BASE_URL}${audioUrl}`;
-      audioRef.current.play().catch(console.error);
-    }
+  const playAudio = (text) => {
+    speakText(
+      text,
+      () => {
+        window.__aiSpeaking__ = true;
+        setIsAISpeaking(true);
+      },
+      () => {
+        window.__aiSpeaking__ = false;
+        setIsAISpeaking(false);
+      }
+    );
   };
 
   const formatTime = (date) => {
@@ -911,7 +971,36 @@ const InterviewApp = () => {
 
         {/* Voice Mode Overlay */}
         {voiceMode && (
-          <div style={{ position: 'absolute', top: '72px', bottom: 0, left: 0, right: 0, background: 'var(--bg-primary)', zIndex: 40, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center' }}>
+          <div 
+            onClick={() => {
+              if (isAISpeaking) {
+                // Cancel active speech synthesis immediately (Interruption)
+                if (window.speechSynthesis) {
+                  window.speechSynthesis.cancel();
+                }
+                window.__aiSpeaking__ = false;
+                setIsAISpeaking(false);
+                // Restart mic immediately
+                setTimeout(() => {
+                  try { window.__recognitionInstance__ && window.__recognitionInstance__.start(); } catch(e) {}
+                }, 100);
+              }
+            }}
+            style={{ 
+              position: 'absolute', 
+              top: '72px', 
+              bottom: 0, 
+              left: 0, 
+              right: 0, 
+              background: 'var(--bg-primary)', 
+              zIndex: 40, 
+              display: 'flex', 
+              flexDirection: 'column', 
+              alignItems: 'center', 
+              justifyContent: 'center',
+              cursor: isAISpeaking ? 'pointer' : 'default'
+            }}
+          >
             <div style={{ position: 'relative', width: '200px', height: '200px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '2rem' }}>
               <div style={{ position: 'absolute', inset: 0, background: isAISpeaking ? 'radial-gradient(circle, rgba(16,185,129,0.4) 0%, rgba(16,185,129,0) 70%)' : 'radial-gradient(circle, rgba(79,70,229,0.4) 0%, rgba(79,70,229,0) 70%)', borderRadius: '50%', animation: 'pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite', transform: isRecording || isAISpeaking || isLoading ? 'scale(1.5)' : 'scale(1)', transition: 'transform 0.3s ease' }}></div>
               <div style={{ position: 'relative', width: '120px', height: '120px', background: isAISpeaking ? 'linear-gradient(135deg, #10b981, #059669)' : 'linear-gradient(135deg, #4f46e5, #7c3aed)', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04)', animation: isAISpeaking || isRecording || isLoading ? 'pulse-core 1s ease-in-out infinite alternate' : 'none' }}>
@@ -919,13 +1008,18 @@ const InterviewApp = () => {
               </div>
             </div>
             
-            <div style={{ height: '40px', display: 'flex', alignItems: 'center', justifyContent: 'center', marginBottom: '3rem' }}>
+            <div style={{ height: '60px', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', marginBottom: '3rem', gap: '0.25rem' }}>
               <p style={{ fontSize: '1.25rem', fontWeight: '500', color: 'var(--text-main)', textAlign: 'center', maxWidth: '80%', margin: 0 }}>
                 {isLoading ? "Thinking..." : isAISpeaking ? "AI is speaking..." : isRecording ? "Listening..." : "Waiting for audio..."}
               </p>
+              {isAISpeaking && (
+                <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', textAlign: 'center', margin: 0 }}>
+                  (Click anywhere on screen to interrupt)
+                </p>
+              )}
             </div>
             
-            <button onClick={exitVoiceMode} style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '99px', padding: '1rem 2rem', fontSize: '1.1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', boxShadow: '0 10px 15px -3px rgba(239, 68, 68, 0.3)', transition: 'transform 0.2s', ':hover': { transform: 'scale(1.05)' } }}>
+            <button onClick={(e) => { e.stopPropagation(); exitVoiceMode(); }} style={{ background: '#ef4444', color: 'white', border: 'none', borderRadius: '99px', padding: '1rem 2rem', fontSize: '1.1rem', fontWeight: '600', display: 'flex', alignItems: 'center', gap: '0.75rem', cursor: 'pointer', boxShadow: '0 10px 15px -3px rgba(239, 68, 68, 0.3)', transition: 'transform 0.2s', ':hover': { transform: 'scale(1.05)' } }}>
               <PhoneOff size={24} />
               End Conversation
             </button>
@@ -976,10 +1070,10 @@ const InterviewApp = () => {
                       <p style={{ fontSize: '0.875rem', lineHeight: '1.6', margin: 0, color: message.type === 'user' ? 'white' : 'var(--text-main)' }}>
                         {message.content}
                       </p>
-                      {message.audioUrl && (
-                        <button onClick={() => playAudio(message.audioUrl)} style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: message.type === 'user' ? '#e0e7ff' : 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem 0' }} onMouseOver={(e) => e.target.style.opacity = '0.8'} onMouseOut={(e) => e.target.style.opacity = '1'}>
+                      {message.type === 'bot' && (
+                        <button onClick={() => playAudio(message.content)} style={{ marginTop: '0.75rem', display: 'flex', alignItems: 'center', gap: '0.35rem', fontSize: '0.8rem', color: 'var(--text-muted)', background: 'none', border: 'none', cursor: 'pointer', padding: '0.25rem 0' }} onMouseOver={(e) => e.target.style.opacity = '0.8'} onMouseOut={(e) => e.target.style.opacity = '1'}>
                           <Volume2 size={14} />
-                          <span>Play Audio</span>
+                          <span>Speak Response</span>
                         </button>
                       )}
                     </div>

@@ -18,7 +18,7 @@ import certifi
 from agent import run_agent, run_evaluation_workflow
 
 # Load env variables
-load_dotenv()
+load_dotenv(override=True)
 
 # Initialize OpenAI client (still used for TTS)
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
@@ -26,18 +26,30 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 # Initialize MongoDB
 MONGO_URI = os.getenv("MONGO_URI", "mongodb://localhost:27017")
 MONGO_DB_NAME = os.getenv("MONGO_DB", "ai_interview_platform")
-mongo_client = AsyncIOMotorClient(MONGO_URI, tlsCAFile=certifi.where())
-db = mongo_client[MONGO_DB_NAME]
+
+try:
+    kwargs = {}
+    if "mongodb+srv://" in MONGO_URI or "tls=true" in MONGO_URI.lower() or "ssl=true" in MONGO_URI.lower():
+        kwargs["tlsCAFile"] = certifi.where()
+    mongo_client = AsyncIOMotorClient(MONGO_URI, **kwargs)
+    db = mongo_client[MONGO_DB_NAME]
+except Exception as e:
+    print(f"Warning: Failed to initialize MongoDB with MONGO_URI ({e})")
+    print("Falling back to local MongoDB: mongodb://localhost:27017")
+    MONGO_URI = "mongodb://localhost:27017"
+    mongo_client = AsyncIOMotorClient(MONGO_URI)
+    db = mongo_client[MONGO_DB_NAME]
+
+
 
 # Initialize FastAPI app
 app = FastAPI(title="AI Interview Platform – Agentic", version="2.0.0")
 
 # Enable CORS
-FRONTEND_URL = os.getenv("FRONTEND_URL", "http://localhost:3000")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[FRONTEND_URL, "http://127.0.0.1:3000"],
-    allow_credentials=True,
+    allow_origins=["*"],
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -129,30 +141,8 @@ async def login(user: UserLogin):
 
 async def generate_audio(text: str) -> Optional[str]:
     """Generate audio using OpenAI TTS and cache it."""
-    try:
-        text_hash = hashlib.md5(text.encode()).hexdigest()
-        audio_filename = f"audio_{text_hash}.mp3"
-        audio_path = f"static/audio/{audio_filename}"
-
-        if os.path.exists(audio_path):
-            return f"/static/audio/{audio_filename}"
-
-        response = await asyncio.get_event_loop().run_in_executor(
-            None,
-            lambda: client.audio.speech.create(
-                model="tts-1",
-                voice="alloy",
-                input=text[:4096]   # TTS limit
-            )
-        )
-
-        with open(audio_path, "wb") as f:
-            f.write(response.read())
-
-        return f"/static/audio/{audio_filename}"
-    except Exception as e:
-        print(f"Error generating audio: {e}")
-        return None
+    # Option C: Disable backend TTS generation completely to save API cost and latency.
+    return None
 
 
 # ─────────────────────────────────────────────
@@ -217,6 +207,12 @@ async def chat_endpoint(chat_message: ChatMessage):
 
     except Exception as e:
         print(f"Error in chat endpoint: {e}")
+        err_msg = str(e)
+        if "insufficient_quota" in err_msg or "429" in err_msg:
+            raise HTTPException(
+                status_code=429,
+                detail="OpenAI API key quota exceeded. Please check your OpenAI plan & billing at platform.openai.com or update OPENAI_API_KEY in backend/.env."
+            )
         raise HTTPException(status_code=500, detail="Internal server error")
 
 

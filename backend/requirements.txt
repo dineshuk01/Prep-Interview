@@ -15,3 +15,5 @@ langchain==0.3.25
 langchain-openai==0.3.16
 langchain-community==0.3.24
 duckduckgo-search==8.0.1
+langchain-groq
+
