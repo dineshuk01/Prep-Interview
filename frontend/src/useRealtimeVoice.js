@@ -19,7 +19,21 @@
 
 import { useRef, useState, useCallback, useEffect } from 'react';
 
-const WS_BASE = process.env.REACT_APP_WS_URL || 'ws://localhost:8000';
+const getWsBase = () => {
+  let envWs = process.env.REACT_APP_WS_URL || process.env.REACT_APP_API_URL;
+  if (!envWs) {
+    return 'ws://localhost:8000';
+  }
+  // Convert http:// to ws://, https:// to wss://
+  let wsUrl = envWs.replace(/^http:/, 'ws:').replace(/^https:/, 'wss:');
+  // Enforce wss:// when hosted over HTTPS to prevent Mixed Content security errors
+  if (typeof window !== 'undefined' && window.location.protocol === 'https:' && wsUrl.startsWith('ws:')) {
+    wsUrl = wsUrl.replace(/^ws:/, 'wss:');
+  }
+  return wsUrl;
+};
+
+const WS_BASE = getWsBase();
 
 export function useRealtimeVoice({ sessionId, roundType, userId, onUserMessage, onBotMessage }) {
   // ── State exposed to UI ──────────────────────────────────────────────────
