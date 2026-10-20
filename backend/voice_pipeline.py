@@ -23,9 +23,15 @@ import edge_tts
 from groq import AsyncGroq
 
 
-# ─────────────────────────────────────────────
-# VAD Manager (Silero VAD via onnxruntime)
-# ─────────────────────────────────────────────
+_SHARED_SILERO_MODEL = None
+
+def _get_silero_model():
+    global _SHARED_SILERO_MODEL
+    if _SHARED_SILERO_MODEL is None:
+        import silero_vad
+        _SHARED_SILERO_MODEL = silero_vad.load_silero_vad()
+        _SHARED_SILERO_MODEL.eval()
+    return _SHARED_SILERO_MODEL
 
 class VADManager:
     """
@@ -45,9 +51,7 @@ class VADManager:
     SILENCE_FRAMES_END = 20      # ~640ms of silence to trigger speech_end
 
     def __init__(self):
-        import silero_vad
-        self._model = silero_vad.load_silero_vad()
-        self._model.eval()
+        self._model = _get_silero_model()
         self._speaking = False
         self._silence_count = 0
         self._audio_buffer: list[bytes] = []  # raw Int16 PCM chunks of speech
