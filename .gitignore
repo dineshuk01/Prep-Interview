@@ -16,3 +16,4 @@ frontend/build/
 
 # Ignore local audio generation files if needed
 backend/static/audio/audio_*.mp3
+backend/requirements_current.txt
