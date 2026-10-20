@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  backend-service:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: ai-interview-backend
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    volumes:
+      - ./backend/static:/app/static
+    networks:
+      - app-network
+
+  frontend-service:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: ai-interview-frontend
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    depends_on:
+      - backend-service
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

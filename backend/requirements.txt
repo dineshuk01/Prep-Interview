@@ -20,4 +20,4 @@ edge-tts
 onnxruntime
 silero-vad
 numpy
-
+certifi
