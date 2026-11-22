@@ -7,15 +7,18 @@
 set -e
 
 echo "=== [1/4] Configuring 2GB Swap Space (Prevents OOM on 1GB/2GB instances) ==="
-if [ ! -f /swapfile ]; then
+if swapon --show | grep -q "/swapfile"; then
+    echo "Swap space /swapfile is already active."
+elif [ -f /swapfile ]; then
+    echo "Swap file exists, enabling swap..."
+    sudo swapon /swapfile 2>/dev/null || true
+else
     sudo fallocate -l 2G /swapfile || sudo dd if=/dev/zero of=/swapfile bs=1M count=2048
     sudo chmod 600 /swapfile
-    sudo mkswap /swapfile
-    sudo swapon /swapfile
+    sudo mkswap /swapfile 2>/dev/null || true
+    sudo swapon /swapfile 2>/dev/null || true
     echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
     echo "Swap space successfully created."
-else
-    echo "Swap space already exists."
 fi
 
 echo "=== [2/4] Updating system packages and installing prerequisites ==="
