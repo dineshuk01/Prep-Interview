@@ -40,13 +40,14 @@ if command -v apt-get &>/dev/null; then
 elif command -v dnf &>/dev/null; then
     echo "Detected Amazon Linux 2023 / Fedora system..."
     sudo dnf update -y
-    sudo dnf install -y docker git curl
+    sudo dnf install -y docker git
     # Install standalone Docker Compose and Compose plugin
-    sudo mkdir -p /usr/local/lib/docker/cli-plugins
+    sudo mkdir -p /usr/local/lib/docker/cli-plugins /usr/local/bin
     ARCH=$(uname -m)
     sudo curl -SL "https://github.com/docker/compose/releases/latest/download/docker-compose-linux-$ARCH" -o /usr/local/lib/docker/cli-plugins/docker-compose
     sudo chmod +x /usr/local/lib/docker/cli-plugins/docker-compose
     sudo ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+    sudo ln -sf /usr/local/lib/docker/cli-plugins/docker-compose /usr/bin/docker-compose || true
 
 elif command -v yum &>/dev/null; then
     echo "Detected Amazon Linux 2 / CentOS system..."
